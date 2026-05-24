@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import { getFolderConfig, getAccessConfig } from '@/lib/config';
+import { sendTelegramNotification } from './telegram';
 
 interface ProjectInfo {
   id: string;
@@ -250,15 +251,15 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
       const expenseValueNumeric = parseFloat(`${valueInteger}.${valueCents}`);
 
       const typeMapping: Record<string, string> = {
-        'A': 'Alimentação - OK',
-        'T': 'Transportes Urbanos - OK',
-        'S': 'Alimentação - OK',
-        'H': 'Hospedagem - OK',
-        'L': 'Lavanderia - OK',
-        'E': 'Estacionamento - OK'
+        'A': 'Alimentação',
+        'T': 'Transportes Urbanos',
+        'S': 'Alimentação',
+        'H': 'Hospedagem',
+        'L': 'Lavanderia',
+        'E': 'Estacionamento'
       };
 
-      const expenseType = typeMapping[typeChar] || 'Alimentação - OK';
+      const expenseType = typeMapping[typeChar] || 'Alimentação';
       log(`[AutoMove] 🔍 Tipo: ${expenseType}, Data: ${expenseDate}, Valor: R$ ${expenseValueStr}`);
 
       try {
@@ -273,19 +274,45 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
           await page.waitForTimeout(500);
 
           if (project?.name) {
-            await projectInput.type(project.name, { delay: 40 });
-            await page.waitForTimeout(1200);
-            const matchingOption = page.locator(`[role="option"]:has-text("${project.name}")`).first();
-            const fallbackOption = page.locator('[role="option"], .MuiAutocomplete-option').first();
-            const option = (await matchingOption.count()) > 0 ? matchingOption : fallbackOption;
-            await option.waitFor({ state: 'visible', timeout: 5000 });
-            await option.click();
+            // Digita o nome aos poucos para acionar o autocomplete
+            await projectInput.type(project.name, { delay: 50 });
+            await page.waitForTimeout(2000);
+
+            // Tenta encontrar a opção pelo texto — múltiplos seletores MUI
+            const optionSelectors = [
+              `li[role="option"]:has-text("${project.name}")`,
+              `[role="option"]:has-text("${project.name}")`,
+              `.MuiAutocomplete-option:has-text("${project.name}")`,
+              `li[role="option"]`,
+              `[role="option"]`,
+              `.MuiAutocomplete-option`,
+            ];
+
+            let clicked = false;
+            for (const sel of optionSelectors) {
+              try {
+                const opt = page.locator(sel).first();
+                await opt.waitFor({ state: 'visible', timeout: 4000 });
+                await opt.click();
+                clicked = true;
+                log(`[AutoMove] ✅ Opção selecionada via: ${sel}`);
+                break;
+              } catch {
+                // tenta o próximo seletor
+              }
+            }
+
+            // Fallback: navegar com teclado se nenhum seletor funcionou
+            if (!clicked) {
+              log('[AutoMove] ⚠️ Dropdown não encontrado via seletor — usando teclado (ArrowDown + Enter)');
+              await page.keyboard.press('ArrowDown');
+              await page.waitForTimeout(600);
+              await page.keyboard.press('Enter');
+            }
           } else {
             await page.keyboard.press('ArrowDown');
             await page.waitForTimeout(800);
-            const firstOption = page.locator('[role="option"], .MuiAutocomplete-option').first();
-            await firstOption.waitFor({ state: 'visible', timeout: 5000 });
-            await firstOption.click();
+            await page.keyboard.press('Enter');
           }
 
           await page.waitForTimeout(1500);
@@ -408,14 +435,19 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
       await page.waitForTimeout(5000);
     }
 
+    const finalReport = {
+      items: results,
+      total: totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+      count: processedCount
+    };
+
+    // Disparar notificação do Telegram de forma assíncrona (não dar await)
+    sendTelegramNotification(finalReport, project?.name).catch(err => console.error('[AutoMove] Erro no telegram:', err));
+
     return { 
       success: true, 
       message: `Processamento concluído: ${processedCount} de ${files.length} arquivos lançados.`,
-      report: {
-        items: results,
-        total: totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        count: processedCount
-      }
+      report: finalReport
     };
 
   } catch (error: unknown) {

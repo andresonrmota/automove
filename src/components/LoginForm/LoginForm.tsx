@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import styles from './LoginForm.module.css';
 import TriageForm from '../TriageForm/TriageForm';
+import ConfirmModal from '../ConfirmModal/ConfirmModal';
 
 export default function LoginForm() {
   const [activeTab, setActiveTab] = useState<'triage' | 'automation'>('triage');
@@ -16,6 +17,9 @@ export default function LoginForm() {
   const [report, setReport] = useState<any>(null);
   const [diagnosticErrors, setDiagnosticErrors] = useState<string[]>([]);
   const [automationFiles, setAutomationFiles] = useState<any[]>([]);
+  const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
+  const [previewItems, setPreviewItems] = useState<any[] | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
     fetch('/api/settings')
@@ -25,7 +29,6 @@ export default function LoginForm() {
         setFoldersConfigured(!!(novos && triados && concluidos));
         const list = data.projects ?? [];
         setProjects(list);
-        if (list.length > 0) setSelectedProjectId(list[0].id);
         const acc = data.access ?? {};
         setAccessUser(acc.user ?? '');
         setAccessHeadless(acc.headless ?? true);
@@ -36,11 +39,26 @@ export default function LoginForm() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPreviewLoading(true);
+    try {
+      const res = await fetch('/api/automation/preview');
+      const data = await res.json();
+      setPreviewItems(data.items ?? []);
+    } catch {
+      setPreviewItems([]);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    setPreviewItems(null);
     setStatus('running');
     setMessage('Iniciando conexão com o servidor...');
     setReport(null);
     setDiagnosticErrors([]);
     setAutomationFiles([]);
+    setConsoleLogs([]);
 
     try {
       const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null;
@@ -71,11 +89,9 @@ export default function LoginForm() {
             const data = JSON.parse(line);
             
             if (data.type === 'log') {
-              // Filtrar logs para mostrar apenas os iniciais ou importantes
               const msg = data.message;
-              if (msg.includes('Diagnóstico') || msg.includes('portal') || msg.includes('login') || msg.includes('Login realizado')) {
-                setMessage(msg);
-              }
+              setConsoleLogs(prev => [...prev, msg].slice(-3));
+              setMessage(msg);
             }
 
             if (data.type === 'file_status') {
@@ -198,6 +214,7 @@ export default function LoginForm() {
                     onChange={e => setSelectedProjectId(e.target.value)}
                     disabled={status === 'running'}
                   >
+                    <option value="" disabled>Selecione o projeto...</option>
                     {projects.map(p => (
                       <option key={p.id} value={p.id}>
                         {p.name}{p.international ? ' 🌐' : ''}
@@ -207,12 +224,12 @@ export default function LoginForm() {
                 </div>
               )}
 
-              <button 
-                type="submit" 
-                className={`${styles.button} ${status === 'running' ? styles.loading : ''}`}
-                disabled={status === 'running' || !accessConfigured || projects.length === 0 || !selectedProjectId}
+              <button
+                type="submit"
+                className={`${styles.button} ${(status === 'running' || previewLoading) ? styles.loading : ''}`}
+                disabled={status === 'running' || previewLoading || !accessConfigured || projects.length === 0 || !selectedProjectId}
               >
-                {status === 'running' ? 'Executando...' : 'Iniciar Automação'}
+                {status === 'running' ? 'Executando...' : previewLoading ? 'Carregando...' : 'Iniciar Automação'}
               </button>
             </form>
 
@@ -224,7 +241,7 @@ export default function LoginForm() {
                   <p>Corrija as credenciais em <Link href="/settings/acesso" className={styles.configWarningLink}>Configurações → Acesso ao MOVE</Link>.</p>
                 </div>
               </div>
-            ) : message && (
+            ) : message && !(accessHeadless && status === 'running') && (
               <div className={`${styles.status} ${styles[status]}`}>
                 <span className={styles.statusIcon}>
                   {status === 'running' && '⏳'}
@@ -248,6 +265,32 @@ export default function LoginForm() {
                     <span className={styles.fileName}>{file.name}</span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {accessHeadless && status !== 'idle' && (
+              <div className={styles.terminalConsole}>
+                <div className={styles.terminalHeader}>
+                  <span>Terminal de Execução</span>
+                  <div className={styles.terminalDots}>
+                    <span className={styles.dotRed} />
+                    <span className={styles.dotYellow} />
+                    <span className={styles.dotGreen} />
+                  </div>
+                </div>
+                <div className={styles.terminalBody}>
+                  {consoleLogs.length === 0 ? (
+                    <>
+                      <div className={styles.terminalLine}>Conectando ao servidor...</div>
+                      <div className={styles.terminalLine}>&nbsp;</div>
+                      <div className={styles.terminalLine}>&nbsp;</div>
+                    </>
+                  ) : (
+                    [...Array(Math.max(0, 3 - consoleLogs.length)).fill(''), ...consoleLogs].map((log, i) => (
+                      <div key={i} className={styles.terminalLine}>{log || '\u00A0'}</div>
+                    ))
+                  )}
+                </div>
               </div>
             )}
 
@@ -303,10 +346,18 @@ export default function LoginForm() {
           </>
         )}
       </div>
-      
+
       <div className={styles.footer}>
         <p>© 2026 AutoMove Enterprise - Fase 1</p>
       </div>
+
+      {previewItems !== null && (
+        <ConfirmModal
+          items={previewItems}
+          onConfirm={handleConfirm}
+          onCancel={() => setPreviewItems(null)}
+        />
+      )}
     </div>
   );
 }

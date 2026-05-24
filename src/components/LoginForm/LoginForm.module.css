@@ -617,3 +617,61 @@
   justify-content: center;
   margin-bottom: 8px;
 }
+
+.terminalConsole {
+  background: #1e1e1e;
+  border-radius: 8px;
+  border: 1px solid #333;
+  margin-top: 24px;
+  overflow: hidden;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+}
+
+.terminalHeader {
+  background: #2d2d2d;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #111;
+  font-size: 0.75rem;
+  color: #888;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.terminalDots {
+  display: flex;
+  gap: 6px;
+}
+
+.dotRed, .dotYellow, .dotGreen {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.dotRed { background: #ff5f56; }
+.dotYellow { background: #ffbd2e; }
+.dotGreen { background: #27c93f; }
+
+.terminalBody {
+  padding: 12px;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 0.8rem;
+  color: #00ff00;
+  max-height: 250px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.terminalLine {
+  word-break: break-all;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}

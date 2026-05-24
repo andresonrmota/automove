@@ -10,9 +10,13 @@ export async function POST(req: Request) {
 
   const stream = new ReadableStream({
     async start(controller) {
-      const sendUpdate = (message: string, data?: Record<string, unknown>) => {
-        const payload = JSON.stringify({ message, ...data });
-        controller.enqueue(encoder.encode(payload + '\n'));
+      const sendUpdate = (eventOrMessage: any, data?: Record<string, unknown>) => {
+        if (typeof eventOrMessage === 'string') {
+          const payload = JSON.stringify({ message: eventOrMessage, ...data });
+          controller.enqueue(encoder.encode(payload + '\n'));
+        } else {
+          controller.enqueue(encoder.encode(JSON.stringify(eventOrMessage) + '\n'));
+        }
       };
 
       try {

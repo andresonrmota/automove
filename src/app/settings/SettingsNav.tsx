@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { href: '/settings/pastas',   label: 'Pastas de trabalho', icon: '📁' },
   { href: '/settings/projetos', label: 'Projetos',           icon: '🗂️' },
   { href: '/settings/acesso',   label: 'Acesso ao MOVE',     icon: '🔐' },
+  { href: '/settings/telegram', label: 'Telegram',           icon: '🤖' },
 ];
 
 export default function SettingsNav() {

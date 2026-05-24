@@ -1,16 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import fs from 'fs';
 import path from 'path';
+import { getFolderConfig } from '@/lib/config';
 
-const PENDING_DIR = path.join(process.cwd(), 'uploads', 'pending');
-
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
-  const file = searchParams.get('file');
+export async function GET(req: NextRequest) {
+  const file = req.nextUrl.searchParams.get('file');
 
   if (!file) return new Response('Arquivo não especificado', { status: 400 });
 
-  const filePath = path.join(PENDING_DIR, file);
+  const { novos } = getFolderConfig();
+  const filePath = path.join(novos, file);
 
   if (!fs.existsSync(filePath)) return new Response('Arquivo não encontrado', { status: 404 });
 

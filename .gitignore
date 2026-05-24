@@ -45,3 +45,6 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+
+# AutoMove config local
+/data/config.json

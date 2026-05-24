@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styles from './TriageForm.module.css';
 
 export default function TriageForm() {
@@ -11,9 +11,14 @@ export default function TriageForm() {
   });
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
+  const [novosPath, setNovosPath] = useState('');
+  const datePickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadFiles();
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(data => setNovosPath(data.folders?.novos ?? ''))
+      .catch(() => {});
   }, []);
 
   const loadFiles = async () => {
@@ -39,12 +44,24 @@ export default function TriageForm() {
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, '');
     if (value.length > 8) value = value.slice(0, 8);
-    
     let formatted = value;
     if (value.length > 2) formatted = `${value.slice(0, 2)}/${value.slice(2)}`;
     if (value.length > 4) formatted = `${value.slice(0, 2)}/${value.slice(2, 4)}/${value.slice(4)}`;
-    
     setFormData(prev => ({ ...prev, date: formatted }));
+  };
+
+  const handleCalendarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const [yyyy, mm, dd] = e.target.value.split('-');
+    if (yyyy && mm && dd) {
+      setFormData(prev => ({ ...prev, date: `${dd}/${mm}/${yyyy}` }));
+    }
+  };
+
+  // Converte DD/MM/AAAA → AAAA-MM-DD para o input[type=date]
+  const toIsoDate = (dmy: string) => {
+    const parts = dmy.split('/');
+    if (parts.length === 3 && parts[2].length === 4) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+    return '';
   };
 
   const isOverLimit = (formData.type === 'A' || formData.type === 'S') && 
@@ -89,13 +106,34 @@ export default function TriageForm() {
     }
   };
 
+  const openNovosFolder = async () => {
+    if (!novosPath) return;
+    await fetch('/api/open-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folderPath: novosPath }),
+    });
+  };
+
   if (files.length === 0) {
     return (
       <div className={styles.emptyState}>
         <span className={styles.emptyIcon}>📂</span>
-        <h3>Tudo limpo por aqui!</h3>
-        <p>Jogue seus arquivos na pasta <code>pending-uploads</code> para começar a triagem.</p>
-        <button onClick={loadFiles} className={styles.refreshButton}>Atualizar Pasta</button>
+        <h3>Nenhum arquivo encontrado</h3>
+        <p>Coloque os recibos na pasta <strong>Novos</strong> e clique em "Iniciar Triagem".</p>
+        {novosPath && (
+          <code className={styles.pathHint}>{novosPath}</code>
+        )}
+        <div className={styles.emptyActions}>
+          {novosPath && (
+            <button onClick={openNovosFolder} className={styles.openButton}>
+              Abrir pasta Novos
+            </button>
+          )}
+          <button onClick={loadFiles} className={styles.refreshButton}>
+            Iniciar Triagem
+          </button>
+        </div>
       </div>
     );
   }
@@ -135,15 +173,33 @@ export default function TriageForm() {
           </div>
 
           <div className={styles.field}>
-            <label>Data (DD/MM/AAAA)</label>
-            <input 
-              type="text" 
-              placeholder="Ex: 30/04/2026" 
-              value={formData.date}
-              onChange={handleDateChange}
-              className={styles.input}
-              required
-            />
+            <label>Data</label>
+            <div className={styles.dateRow}>
+              <input
+                type="text"
+                placeholder="DD/MM/AAAA"
+                value={formData.date}
+                onChange={handleDateChange}
+                className={styles.input}
+                required
+              />
+              <button
+                type="button"
+                className={styles.calendarBtn}
+                onClick={() => datePickerRef.current?.showPicker()}
+                title="Abrir calendário"
+              >
+                📅
+              </button>
+              <input
+                ref={datePickerRef}
+                type="date"
+                value={toIsoDate(formData.date)}
+                onChange={handleCalendarChange}
+                className={styles.hiddenDatePicker}
+                tabIndex={-1}
+              />
+            </div>
           </div>
 
           <div className={styles.field}>

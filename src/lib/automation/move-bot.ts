@@ -1,8 +1,16 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
+import { getFolderConfig, getAccessConfig } from '@/lib/config';
 
-export async function runMoveAutomation(onProgress?: (event: any) => void) {
+interface ProjectInfo {
+  id: string;
+  name: string;
+  international: boolean;
+}
+
+export async function runMoveAutomation(project: ProjectInfo | null, onProgress?: (event: unknown) => void) {
+  const isInternational = project?.international ?? false;
   const log = (msg: string) => {
     console.log(msg);
     if (onProgress) onProgress({ type: 'log', message: msg });
@@ -12,15 +20,15 @@ export async function runMoveAutomation(onProgress?: (event: any) => void) {
     if (onProgress) onProgress({ type: 'file_status', fileName, status, index, total });
   };
 
-  const uploadsDir = path.join(process.cwd(), 'uploads');
-  const processedDir = path.join(uploadsDir, 'processed');
+  const { triados: uploadsDir, concluidos: processedDir } = getFolderConfig();
+  const access = getAccessConfig();
 
   if (!fs.existsSync(processedDir)) {
     fs.mkdirSync(processedDir, { recursive: true });
   }
 
   // --- 1. DIAGNÓSTICO PRÉVIO (PRE-FLIGHT CHECK) ---
-  const files = fs.readdirSync(uploadsDir).filter((f: string) => 
+  const files = fs.readdirSync(uploadsDir).filter((f: string) =>
     !f.startsWith('.') && 
     (f.toLowerCase().endsWith('.jpg') || f.toLowerCase().endsWith('.jpeg') || f.toLowerCase().endsWith('.png') || f.toLowerCase().endsWith('.pdf'))
   );
@@ -69,17 +77,16 @@ export async function runMoveAutomation(onProgress?: (event: any) => void) {
       const valueNumeric = parseFloat(`${parseInt(rawValue.substring(0, 3), 10)}.${rawValue.substring(3, 5)}`);
 
       if (typeChar === 'A' || typeChar === 'S') {
-        // Individual
-        if (valueNumeric > 40) {
-          errors.push(`A MV estabelece como valor diário máximo para refeição de R$ 40,00. Seu arquivo ${fileName} informa R$ ${valueNumeric.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em ${expenseDate}.`);
+        if (!isInternational) {
+          if (valueNumeric > 40) {
+            errors.push(`A MV estabelece como valor diário máximo para refeição de R$ 40,00. Seu arquivo ${fileName} informa R$ ${valueNumeric.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em ${expenseDate}.`);
+          }
+          if (!dailyMealData[dateKey]) {
+            dailyMealData[dateKey] = { total: 0, files: [] };
+          }
+          dailyMealData[dateKey].total += valueNumeric;
+          dailyMealData[dateKey].files.push(fileName);
         }
-
-        // Agrupamento por data para somatória
-        if (!dailyMealData[dateKey]) {
-          dailyMealData[dateKey] = { total: 0, files: [] };
-        }
-        dailyMealData[dateKey].total += valueNumeric;
-        dailyMealData[dateKey].files.push(fileName);
       }
     } catch (e) {
       errors.push(`Erro ao interpretar o arquivo "${fileName}". Verifique o padrão de nome.`);
@@ -108,8 +115,8 @@ export async function runMoveAutomation(onProgress?: (event: any) => void) {
   log('[AutoMove] ✅ Diagnóstico aprovado! Abrindo portal...');
 
   // --- 2. INICIALIZAÇÃO DO BROWSER ---
-  const browser = await chromium.launch({ 
-    headless: process.env.HEADLESS === 'true',
+  const browser = await chromium.launch({
+    headless: access.headless,
     slowMo: 50
   });
   
@@ -131,12 +138,12 @@ export async function runMoveAutomation(onProgress?: (event: any) => void) {
     const userField = page.locator('input.MuiOutlinedInput-input').nth(0);
     await userField.waitFor({ state: 'visible', timeout: 10000 });
     await userField.click();
-    await page.keyboard.type(process.env.WTS_USER || '', { delay: 100 });
+    await page.keyboard.type(access.user, { delay: 100 });
 
     // Senha
     const passField = page.locator('input[type="password"]');
     await passField.click();
-    await page.keyboard.type(process.env.WTS_PASS || '', { delay: 100 });
+    await page.keyboard.type(access.pass, { delay: 100 });
 
     // Empresa (MV) - O portal costuma vir com MV, mas vamos garantir
     const companySelect = page.locator('#demo-simple-select-outlined');
@@ -152,8 +159,28 @@ export async function runMoveAutomation(onProgress?: (event: any) => void) {
     const loginButton = page.locator('button.MuiButton-contained');
     await loginButton.click();
 
-    // Aguardar redirecionamento para o dashboard
-    await page.waitForURL('**/site**', { timeout: 30000 });
+    // Aguardar redirect OU mensagem de erro de credencial
+    const loginOutcome = await Promise.race([
+      page.waitForURL('**/site**', { timeout: 20000 }).then(() => 'success' as const),
+      page.waitForSelector('text="Usuário ou senha inválidos"', { timeout: 20000 }).then(() => 'invalid_credentials' as const),
+    ]).catch(() => 'timeout' as const);
+
+    if (loginOutcome === 'invalid_credentials') {
+      return {
+        success: false,
+        error: 'INVALID_CREDENTIALS',
+        details: ['Usuário ou senha inválidos. Verifique as credenciais em Configurações → Acesso ao MOVE.'],
+      };
+    }
+
+    if (loginOutcome === 'timeout') {
+      return {
+        success: false,
+        error: 'LOGIN_TIMEOUT',
+        details: ['O portal MOVE demorou demais para responder. Verifique sua conexão e tente novamente.'],
+      };
+    }
+
     log('[AutoMove] ✅ Login realizado com sucesso.');
 
     // 2. NAVEGAÇÃO PARA PRESTAÇÃO DE CONTAS
@@ -237,20 +264,31 @@ export async function runMoveAutomation(onProgress?: (event: any) => void) {
       try {
         // 5. PREENCHIMENTO DO FORMULÁRIO
         if (isFirstDocument) {
-          log('[AutoMove] 🏢 Selecionando Projeto (documento inicial)...');
+          log(`[AutoMove] 🏢 Selecionando Projeto: "${project?.name ?? '(nenhum)'}"...`);
           const projectContainer = page.locator('div:has(> label:has-text("Projeto"))').first();
           const projectInput = projectContainer.locator('input').first();
           await projectInput.waitFor({ state: 'visible', timeout: 10000 });
           await projectInput.click();
-          await page.waitForTimeout(1000);
-          await page.keyboard.press('ArrowDown');
-          await page.waitForTimeout(1000);
-          
-          const firstOption = page.locator('[role="option"], [id*="-option-0"], .MuiAutocomplete-option').first();
-          await firstOption.waitFor({ state: 'visible', timeout: 5000 });
-          await firstOption.click();
-          await page.keyboard.press('Enter');
-          await page.waitForTimeout(2000);
+          await projectInput.fill('');
+          await page.waitForTimeout(500);
+
+          if (project?.name) {
+            await projectInput.type(project.name, { delay: 40 });
+            await page.waitForTimeout(1200);
+            const matchingOption = page.locator(`[role="option"]:has-text("${project.name}")`).first();
+            const fallbackOption = page.locator('[role="option"], .MuiAutocomplete-option').first();
+            const option = (await matchingOption.count()) > 0 ? matchingOption : fallbackOption;
+            await option.waitFor({ state: 'visible', timeout: 5000 });
+            await option.click();
+          } else {
+            await page.keyboard.press('ArrowDown');
+            await page.waitForTimeout(800);
+            const firstOption = page.locator('[role="option"], .MuiAutocomplete-option').first();
+            await firstOption.waitFor({ state: 'visible', timeout: 5000 });
+            await firstOption.click();
+          }
+
+          await page.waitForTimeout(1500);
           log('[AutoMove] ✅ Projeto selecionado.');
         } else {
           log('[AutoMove] ⏩ Pulando seleção de Projeto (já preenchido).');
@@ -366,7 +404,7 @@ export async function runMoveAutomation(onProgress?: (event: any) => void) {
       }
     }
 
-    if (process.env.HEADLESS !== 'true') {
+    if (!access.headless) {
       await page.waitForTimeout(5000);
     }
 
@@ -385,7 +423,7 @@ export async function runMoveAutomation(onProgress?: (event: any) => void) {
     console.error('[AutoMove] ❌ Erro crítico na automação:', errorMessage);
     throw error;
   } finally {
-    if (process.env.HEADLESS === 'true') {
+    if (access.headless) {
       await browser.close();
     }
   }

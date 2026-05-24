@@ -1,14 +1,38 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import styles from './LoginForm.module.css';
 import TriageForm from '../TriageForm/TriageForm';
 
 export default function LoginForm() {
   const [activeTab, setActiveTab] = useState<'triage' | 'automation'>('triage');
+  const [foldersConfigured, setFoldersConfigured] = useState<boolean | null>(null);
+  const [projects, setProjects] = useState<{ id: string; name: string; international: boolean }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [accessUser, setAccessUser] = useState('');
+  const [accessHeadless, setAccessHeadless] = useState(true);
+  const [accessConfigured, setAccessConfigured] = useState<boolean | null>(null);
   const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [report, setReport] = useState<any>(null);
   const [diagnosticErrors, setDiagnosticErrors] = useState<string[]>([]);
   const [automationFiles, setAutomationFiles] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(r => r.json())
+      .then(data => {
+        const { novos, triados, concluidos } = data.folders ?? {};
+        setFoldersConfigured(!!(novos && triados && concluidos));
+        const list = data.projects ?? [];
+        setProjects(list);
+        if (list.length > 0) setSelectedProjectId(list[0].id);
+        const acc = data.access ?? {};
+        setAccessUser(acc.user ?? '');
+        setAccessHeadless(acc.headless ?? true);
+        setAccessConfigured(!!(acc.user && acc.pass));
+      })
+      .catch(() => setFoldersConfigured(false));
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,8 +43,11 @@ export default function LoginForm() {
     setAutomationFiles([]);
 
     try {
+      const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null;
       const response = await fetch('/api/automation', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project: selectedProject }),
       });
 
       if (!response.body) return;
@@ -69,8 +96,16 @@ export default function LoginForm() {
               if (data.report) setReport(data.report);
             } else if (data.status === 'error') {
               setStatus('error');
-              setMessage('Erro na automação.');
-              if (data.details) setDiagnosticErrors(data.details);
+              const isCredentialError = data.message?.includes('INVALID_CREDENTIALS') || data.details?.[0]?.includes('Usuário ou senha inválidos');
+              const isTimeoutError = data.message?.includes('LOGIN_TIMEOUT') || data.details?.[0]?.includes('demorou demais');
+              if (isCredentialError) {
+                setMessage('CREDENTIAL_ERROR');
+              } else if (isTimeoutError) {
+                setMessage(data.details?.[0] || 'Portal MOVE não respondeu.');
+              } else {
+                setMessage(data.message || 'Erro na automação.');
+                if (data.details) setDiagnosticErrors(data.details);
+              }
             }
           } catch (err) {
             console.error('Erro ao processar linha de log:', err);
@@ -87,14 +122,29 @@ export default function LoginForm() {
     <div className={styles.container}>
       <div className={styles.card}>
         <div className={styles.header}>
-          <div className={styles.logo}>
-            <img src="/logo.png" alt="AutoMove Logo" className={styles.logoImage} />
-            <h1 className={styles.title}>AutoMove</h1>
+          <div className={styles.headerRow}>
+            <div className={styles.logo}>
+              <img src="/logo.png" alt="AutoMove Logo" className={styles.logoImage} />
+              <h1 className={styles.title}>AutoMove</h1>
+            </div>
+            <Link href="/settings" className={styles.settingsLink} title="Configurações">
+              ⚙
+            </Link>
           </div>
           <p className={styles.subtitle}>Automação de Prestação de Contas</p>
         </div>
 
-        <div className={styles.tabs}>
+        {foldersConfigured === false && (
+          <div className={styles.configWarning}>
+            <span className={styles.configWarningIcon}>⚠️</span>
+            <div>
+              <strong>Configure as pastas de trabalho antes de continuar.</strong>
+              <p>Acesse <Link href="/settings" className={styles.configWarningLink}>Configurações</Link> e defina as 3 pastas do fluxo.</p>
+            </div>
+          </div>
+        )}
+
+        <div className={styles.tabs} style={foldersConfigured === false ? { pointerEvents: 'none', opacity: 0.35 } : undefined}>
           <button 
             className={`${styles.tabButton} ${activeTab === 'triage' ? styles.tabActive : ''}`}
             onClick={() => setActiveTab('triage')}
@@ -114,20 +164,67 @@ export default function LoginForm() {
         {activeTab === 'automation' && (
           <>
             <form className={styles.form} onSubmit={handleLogin}>
-              <div className={styles.infoBox}>
-                <p>As credenciais configuradas no arquivo <code>.env</code> serão utilizadas para o acesso ao portal MOVE.</p>
-              </div>
+              {accessConfigured === false ? (
+                <div className={styles.configWarning}>
+                  <span className={styles.configWarningIcon}>⚠️</span>
+                  <div>
+                    <strong>Acesso ao MOVE não configurado.</strong>
+                    <p>Vá em <Link href="/settings/acesso" className={styles.configWarningLink}>Configurações → Acesso ao MOVE</Link> e informe suas credenciais.</p>
+                  </div>
+                </div>
+              ) : accessConfigured === true && (
+                <div className={styles.accessCard}>
+                  <div className={styles.accessInfo}>
+                    <span className={styles.accessIcon}>👤</span>
+                    <span className={styles.accessUser}>{accessUser}</span>
+                  </div>
+                  <div className={styles.accessMode}>
+                    <span className={`${styles.modeDot} ${accessHeadless ? styles.modeSilent : styles.modeVisible}`} />
+                    <span>{accessHeadless ? 'Modo silencioso' : 'Navegador visível'}</span>
+                  </div>
+                </div>
+              )}
+
+              {projects.length === 0 ? (
+                <div className={styles.noProjects}>
+                  Nenhum projeto cadastrado. <Link href="/settings" className={styles.configWarningLink}>Adicione em Configurações →</Link>
+                </div>
+              ) : (
+                <div className={styles.projectSelector}>
+                  <label className={styles.projectLabel}>Projeto</label>
+                  <select
+                    className={styles.projectSelect}
+                    value={selectedProjectId}
+                    onChange={e => setSelectedProjectId(e.target.value)}
+                    disabled={status === 'running'}
+                  >
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{p.international ? ' 🌐' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <button 
                 type="submit" 
                 className={`${styles.button} ${status === 'running' ? styles.loading : ''}`}
-                disabled={status === 'running'}
+                disabled={status === 'running' || !accessConfigured || projects.length === 0 || !selectedProjectId}
               >
                 {status === 'running' ? 'Executando...' : 'Iniciar Automação'}
               </button>
             </form>
 
-            {message && (
+            {message === 'CREDENTIAL_ERROR' ? (
+              <div className={styles.credentialError}>
+                <span>🔐</span>
+                <div>
+                  <strong>Usuário ou senha inválidos no portal MOVE.</strong>
+                  <p>Corrija as credenciais em <Link href="/settings/acesso" className={styles.configWarningLink}>Configurações → Acesso ao MOVE</Link>.</p>
+                </div>
+              </div>
+            ) : message && (
               <div className={`${styles.status} ${styles[status]}`}>
                 <span className={styles.statusIcon}>
                   {status === 'running' && '⏳'}

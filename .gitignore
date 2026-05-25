@@ -1,6 +1,6 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# dependencies
+# =========================================
+# 1. DEPENDÊNCIAS E CACHES
+# =========================================
 /node_modules
 /.pnp
 .pnp.*
@@ -9,43 +9,60 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+.eslintcache
 
-# testing
-/coverage
-
-# next.js
+# =========================================
+# 2. NEXT.JS & WEB BUILD
+# =========================================
 /.next/
 /out/
-
-# production
 /build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
-
-# env files (can opt-in for committing if needed)
-.env*
-
-# vercel
-.vercel
-
-# typescript
 *.tsbuildinfo
 next-env.d.ts
+.vercel
 
-# Playwright
+# =========================================
+# 3. ELECTRON DESKTOP BUILD (CRÍTICO)
+# =========================================
+/dist/
+/dist-electron/
+/release/
+
+# =========================================
+# 4. SEGURANÇA E AMBIENTE
+# =========================================
+.env*
+*.pem
+/data/config.json
+
+# =========================================
+# 5. PLAYWRIGHT E TESTES
+# =========================================
+/coverage
 test-results/
 error_*.png
 playwright-report/
 blob-report/
 playwright/.cache/
 
-# AutoMove config local
-/data/config.json
+# =========================================
+# 6. DADOS LOCAIS DO AUTOMOVE (RECIBOS)
+# =========================================
+# Impede que pastas de teste com notas da empresa subam pro Git
+/uploads/
+/Triados/
+/Processados/
+*.pdf
+*.jpg
+*.jpeg
+*.png
+
+# =========================================
+# 7. LOGS E SISTEMA OPERACIONAL
+# =========================================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+.DS_Store
+Thumbs.db

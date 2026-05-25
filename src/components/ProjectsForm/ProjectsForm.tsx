@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getSettings, saveSettings } from '@/lib/api-client';
 import styles from './ProjectsForm.module.css';
 
 interface Project {
@@ -17,8 +18,7 @@ export default function ProjectsForm() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.json())
+    getSettings()
       .then(data => setProjects(data.projects ?? []))
       .catch(() => {});
   }, []);
@@ -49,13 +49,8 @@ export default function ProjectsForm() {
     setSaving(true);
     setFeedback(null);
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projects }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao salvar.');
+      const data = await saveSettings({ projects });
+      if (data.error) throw new Error(data.error);
       setFeedback({ type: 'success', message: 'Projetos salvos com sucesso!' });
     } catch (e: unknown) {
       setFeedback({ type: 'error', message: e instanceof Error ? e.message : 'Erro desconhecido.' });

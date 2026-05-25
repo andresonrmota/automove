@@ -2,12 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const CONFIG_PATH = path.join(process.cwd(), 'data', 'config.json');
+const CONFIG_PATH = path.join(os.homedir(), '.automove', 'config.json');
 
 export interface FolderConfig {
-  novos: string;
-  triados: string;
-  concluidos: string;
+  baseFolder: string;
 }
 
 export interface Project {
@@ -29,7 +27,7 @@ export interface AppConfig {
   access: AccessConfig;
 }
 
-const EMPTY_FOLDERS: FolderConfig = { novos: '', triados: '', concluidos: '' };
+const EMPTY_FOLDERS: FolderConfig = { baseFolder: '' };
 
 const EMPTY_ACCESS: AccessConfig = { user: '', pass: '', client: '', headless: true };
 
@@ -79,7 +77,7 @@ export function saveAccessConfig(access: AccessConfig): void {
 }
 
 export function isFolderConfigComplete(config: FolderConfig): boolean {
-  return !!(config.novos && config.triados && config.concluidos);
+  return !!config.baseFolder;
 }
 
 export function getHomeDir(): string {

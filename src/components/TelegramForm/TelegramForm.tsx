@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getTelegramConfig, saveTelegramConfig, testTelegram } from '@/lib/api-client';
 import styles from './TelegramForm.module.css';
 
 interface TelegramConfig {
@@ -17,8 +18,7 @@ export default function TelegramForm() {
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
-    fetch('/api/settings/telegram')
-      .then(r => r.json())
+    getTelegramConfig()
       .then(data => {
         if (data) setForm(data);
       })
@@ -37,13 +37,8 @@ export default function TelegramForm() {
     setTesting(true);
     setFeedback(null);
     try {
-      const res = await fetch('/api/settings/telegram/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ botToken: form.botToken, chatId: form.chatId }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao testar integração.');
+      const data = await testTelegram({ botToken: form.botToken, chatId: form.chatId });
+      if (data.error) throw new Error(data.error);
       setFeedback({ type: 'success', message: 'Mensagem de teste enviada com sucesso! Verifique seu Telegram.' });
     } catch (e: unknown) {
       setFeedback({ type: 'error', message: e instanceof Error ? e.message : 'Erro desconhecido.' });
@@ -61,13 +56,8 @@ export default function TelegramForm() {
     setSaving(true);
     setFeedback(null);
     try {
-      const res = await fetch('/api/settings/telegram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao salvar configurações.');
+      const data = await saveTelegramConfig(form);
+      if (data.error) throw new Error(data.error);
       setFeedback({ type: 'success', message: 'Configurações salvas com sucesso!' });
     } catch (e: unknown) {
       setFeedback({ type: 'error', message: e instanceof Error ? e.message : 'Erro desconhecido.' });

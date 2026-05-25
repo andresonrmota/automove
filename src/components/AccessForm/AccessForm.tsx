@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getSettings, saveSettings, validateAccess } from '@/lib/api-client';
 import styles from './AccessForm.module.css';
 
 interface AccessConfig {
@@ -19,8 +20,7 @@ export default function AccessForm() {
   const [validationResult, setValidationResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.json())
+    getSettings()
       .then(data => { if (data.access) setForm(data.access); })
       .catch(() => { });
   }, []);
@@ -36,12 +36,7 @@ export default function AccessForm() {
     setValidating(true);
     setValidationResult(null);
     try {
-      const res = await fetch('/api/validate-access', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user: form.user, pass: form.pass, client: form.client }),
-      });
-      const data = await res.json();
+      const data = await validateAccess({ user: form.user, pass: form.pass, client: form.client });
       if (data.success) {
         setValidationResult({ type: 'success', message: 'Credenciais válidas! Login realizado com sucesso.' });
       } else {
@@ -62,13 +57,8 @@ export default function AccessForm() {
     setSaving(true);
     setFeedback(null);
     try {
-      const res = await fetch('/api/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ access: form }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao salvar.');
+      const data = await saveSettings({ access: form });
+      if (data.error) throw new Error(data.error);
       setFeedback({ type: 'success', message: 'Configurações de acesso salvas!' });
     } catch (e: unknown) {
       setFeedback({ type: 'error', message: e instanceof Error ? e.message : 'Erro desconhecido.' });

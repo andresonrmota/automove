@@ -1,7 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
-const ENV_PATH = path.join(process.cwd(), '.env');
+const ENV_PATH = path.join(os.homedir(), '.automove', '.env');
 
 export interface TelegramConfig {
   enabled: boolean;

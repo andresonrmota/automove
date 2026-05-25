@@ -21,9 +21,19 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
     if (onProgress) onProgress({ type: 'file_status', fileName, status, index, total });
   };
 
-  const { triados: uploadsDir, concluidos: processedDir } = getFolderConfig();
+  const { baseFolder } = getFolderConfig();
   const access = getAccessConfig();
 
+  if (!baseFolder) {
+    throw new Error('Pasta Base não configurada nas definições.');
+  }
+
+  const uploadsDir = path.join(baseFolder, 'Triados');
+  const processedDir = path.join(baseFolder, 'Processados');
+
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
   if (!fs.existsSync(processedDir)) {
     fs.mkdirSync(processedDir, { recursive: true });
   }
@@ -116,10 +126,22 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
   log('[AutoMove] ✅ Diagnóstico aprovado! Abrindo portal...');
 
   // --- 2. INICIALIZAÇÃO DO BROWSER ---
-  const browser = await chromium.launch({
+  const launchOptions: any = {
     headless: access.headless,
     slowMo: 50
-  });
+  };
+
+  if (process.platform === 'win32') {
+    if (fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe') || 
+        fs.existsSync('C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe')) {
+      launchOptions.channel = 'chrome';
+    } else if (fs.existsSync('C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe') || 
+               fs.existsSync('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe')) {
+      launchOptions.channel = 'msedge';
+    }
+  }
+
+  const browser = await chromium.launch(launchOptions);
   
   const context = await browser.newContext({
     viewport: { width: 1280, height: 720 },
@@ -441,8 +463,15 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
       count: processedCount
     };
 
-    // Disparar notificação do Telegram de forma assíncrona (não dar await)
-    sendTelegramNotification(finalReport, project?.name).catch(err => console.error('[AutoMove] Erro no telegram:', err));
+    // Disparar notificação do Telegram
+    try {
+      log('[AutoMove] 📱 Enviando notificação para o Telegram...');
+      await sendTelegramNotification(finalReport, project?.name);
+      log('[AutoMove] 📬 Notificação processada com sucesso.');
+    } catch (telegramErr) {
+      log('[AutoMove] ⚠️ Não foi possível enviar notificação pelo Telegram (Falha de rede/configuração).');
+      console.error('[AutoMove] Erro no telegram:', telegramErr);
+    }
 
     return { 
       success: true, 

@@ -10,8 +10,11 @@ export async function sendTelegramNotification(report: any, projectName?: string
   const chatId = process.env.TELEGRAM_CHAT_ID;
   const enabled = process.env.TELEGRAM_ENABLED === 'true';
 
-  if (!enabled || !token || !chatId) {
-    return;
+  if (!enabled) {
+    throw new Error('As notificações do Telegram estão desativadas nas configurações.');
+  }
+  if (!token || !chatId) {
+    throw new Error('Token ou Chat ID do Telegram ausentes.');
   }
 
   const projectInfo = projectName ? `[${projectName}]\n` : '';
@@ -39,11 +42,10 @@ export async function sendTelegramNotification(report: any, projectName?: string
     });
 
     if (!response.ok) {
-      console.error('[Telegram] Falha ao enviar notificação:', await response.text());
-    } else {
-      console.log('[Telegram] Notificação enviada com sucesso.');
+      const errorText = await response.text();
+      throw new Error(`Falha HTTP ${response.status}: ${errorText}`);
     }
   } catch (error) {
-    console.error('[Telegram] Erro ao enviar notificação:', error);
+    throw error;
   }
 }

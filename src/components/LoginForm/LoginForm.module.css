@@ -11,7 +11,7 @@
 
 .card {
   width: 100%;
-  max-width: 650px;
+  max-width: 800px;
   background: var(--card-bg);
   backdrop-filter: var(--glass-effect);
   -webkit-backdrop-filter: var(--glass-effect);
@@ -195,11 +195,18 @@
   cursor: pointer;
   transition: border-color 0.2s;
   width: 100%;
+  white-space: normal;
+  word-wrap: break-word;
 }
 
 .projectSelect:focus {
   outline: none;
   border-color: var(--accent-color);
+}
+
+.projectSelect option {
+  background-color: #1a1a1a;
+  color: #ffffff;
 }
 
 .projectSelect:disabled {
@@ -619,25 +626,27 @@
 }
 
 .terminalConsole {
-  background: #1e1e1e;
-  border-radius: 8px;
-  border: 1px solid #333;
+  background: rgba(30, 30, 30, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   margin-top: 24px;
   overflow: hidden;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
   display: flex;
   flex-direction: column;
 }
 
 .terminalHeader {
-  background: #2d2d2d;
-  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.4);
+  padding: 10px 14px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #111;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   font-size: 0.75rem;
-  color: #888;
+  color: rgba(255, 255, 255, 0.6);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -659,15 +668,15 @@
 .dotGreen { background: #27c93f; }
 
 .terminalBody {
-  padding: 12px;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 0.8rem;
-  color: #00ff00;
-  max-height: 250px;
+  padding: 16px;
+  font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;
+  font-size: 0.85rem;
+  color: #a7f3d0;
+  max-height: 280px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .terminalLine {

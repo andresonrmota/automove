@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { getSettings, listTriageFiles, processTriageFile, openFolder, openDirectoryDialog } from '@/lib/api-client';
 import styles from './TriageForm.module.css';
 
 export default function TriageForm() {
@@ -11,20 +12,40 @@ export default function TriageForm() {
   });
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
-  const [novosPath, setNovosPath] = useState('');
+  const [baseFolder, setBaseFolder] = useState('');
   const datePickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(r => r.json())
-      .then(data => setNovosPath(data.folders?.novos ?? ''))
+    getSettings()
+      .then(data => setBaseFolder(data.folders?.baseFolder ?? ''))
       .catch(() => {});
   }, []);
 
+  const handleSelectFolder = async () => {
+    const res = await openDirectoryDialog();
+    if (!res.canceled && res.path) {
+      setBaseFolder(res.path);
+      // Automagicamente carrega após selecionar
+      try {
+        const data = await listTriageFiles();
+        if (data.files) {
+          setFiles(data.files);
+          const today = new Date();
+          const dd = String(today.getDate()).padStart(2, '0');
+          const mm = String(today.getMonth() + 1).padStart(2, '0');
+          const yyyy = today.getFullYear();
+          setFormData(prev => ({ ...prev, date: `${dd}/${mm}/${yyyy}` }));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
   const loadFiles = async () => {
     try {
-      const response = await fetch('/api/triage');
-      const data = await response.json();
+      const data = await listTriageFiles();
+      if (data.error) throw new Error(data.error);
       if (data.files) {
         setFiles(data.files);
         // Resetar formulário com data atual
@@ -64,8 +85,20 @@ export default function TriageForm() {
     return '';
   };
 
+  const numericValue = parseFloat(formData.value.replace(/\./g, '').replace(',', '.')) || 0;
   const isOverLimit = (formData.type === 'A' || formData.type === 'S') && 
-                     parseFloat(formData.value.replace(',', '.')) > 40;
+                     numericValue > 40;
+
+  const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let value = e.target.value.replace(/\D/g, '');
+    if (!value) {
+      setFormData(prev => ({ ...prev, value: '' }));
+      return;
+    }
+    const numValue = (parseInt(value, 10) / 100).toFixed(2);
+    const formattedValue = numValue.replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    setFormData(prev => ({ ...prev, value: formattedValue }));
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,16 +106,12 @@ export default function TriageForm() {
 
     setStatus('saving');
     try {
-      const response = await fetch('/api/triage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          originalName: currentFile.name,
-          ...formData
-        })
+      const data = await processTriageFile({
+        originalName: currentFile.name,
+        ...formData
       });
 
-      if (response.ok) {
+      if (data.success) {
         setStatus('success');
         setMessage('Arquivo preparado com sucesso!');
         setTimeout(() => {
@@ -98,7 +127,7 @@ export default function TriageForm() {
         }, 1000);
       } else {
         setStatus('error');
-        setMessage('Erro ao salvar arquivo.');
+        setMessage(data.error || 'Erro ao salvar arquivo.');
       }
     } catch (err) {
       setStatus('error');
@@ -106,13 +135,9 @@ export default function TriageForm() {
     }
   };
 
-  const openNovosFolder = async () => {
-    if (!novosPath) return;
-    await fetch('/api/open-folder', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ folderPath: novosPath }),
-    });
+  const openBaseFolder = async () => {
+    if (!baseFolder) return;
+    await openFolder(baseFolder);
   };
 
   if (files.length === 0) {
@@ -120,19 +145,29 @@ export default function TriageForm() {
       <div className={styles.emptyState}>
         <span className={styles.emptyIcon}>📂</span>
         <h3>Nenhum arquivo encontrado</h3>
-        <p>Coloque os recibos na pasta <strong>Novos</strong> e clique em "Iniciar Triagem".</p>
-        {novosPath && (
-          <code className={styles.pathHint}>{novosPath}</code>
+        <p>Selecione a sua <strong>Pasta Base</strong> de recibos. Nós criaremos automaticamente as subpastas necessárias.</p>
+        
+        {baseFolder ? (
+          <code className={styles.pathHint}>Pasta Atual: {baseFolder}</code>
+        ) : (
+          <code className={styles.pathHint}>Nenhuma pasta selecionada</code>
         )}
+
         <div className={styles.emptyActions}>
-          {novosPath && (
-            <button onClick={openNovosFolder} className={styles.openButton}>
-              Abrir pasta Novos
-            </button>
-          )}
-          <button onClick={loadFiles} className={styles.refreshButton}>
-            Iniciar Triagem
+          <button onClick={handleSelectFolder} className={styles.openButton}>
+            Selecionar Pasta Base
           </button>
+
+          {baseFolder && (
+            <>
+              <button onClick={openBaseFolder} className={styles.openButton}>
+                Abrir Pasta Atual
+              </button>
+              <button onClick={loadFiles} className={styles.refreshButton}>
+                Recarregar
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -208,7 +243,7 @@ export default function TriageForm() {
               type="text" 
               placeholder="Ex: 38,50" 
               value={formData.value}
-              onChange={e => setFormData({...formData, value: e.target.value})}
+              onChange={handleValueChange}
               className={`${styles.input} ${isOverLimit ? styles.inputError : ''}`}
               required
             />

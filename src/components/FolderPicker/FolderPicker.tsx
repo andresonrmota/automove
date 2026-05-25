@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { browseDirs } from '@/lib/api-client';
 import styles from './FolderPicker.module.css';
 
 interface BrowseResult {
@@ -24,12 +25,8 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
     setLoading(true);
     setError('');
     try {
-      const url = targetPath
-        ? `/api/browse?path=${encodeURIComponent(targetPath)}`
-        : '/api/browse';
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erro ao navegar.');
+      const data = await browseDirs(targetPath);
+      if (data.error) throw new Error(data.error);
       setBrowse(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Erro desconhecido.');
@@ -42,14 +39,22 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
     navigate(initialPath);
   }, [initialPath, navigate]);
 
+  const isWindows = browse ? browse.current.includes('\\') || browse.current.includes(':') : false;
+  const sep = isWindows ? '\\' : '/';
+
   const breadcrumbs = browse
-    ? browse.current.split('/').filter(Boolean).reduce<{ label: string; path: string }[]>(
-        (acc, segment) => {
-          const prev = acc[acc.length - 1]?.path || '';
-          acc.push({ label: segment, path: `${prev}/${segment}` });
+    ? browse.current.split(/[/\\]/).filter(Boolean).reduce<{ label: string; path: string }[]>(
+        (acc, segment, index) => {
+          if (index === 0 && isWindows) {
+            acc.push({ label: segment, path: segment + sep });
+          } else {
+            const prev = acc[acc.length - 1]?.path || '';
+            const nextPath = prev.endsWith(sep) ? prev + segment : prev + sep + segment;
+            acc.push({ label: segment, path: nextPath });
+          }
           return acc;
         },
-        [{ label: '/', path: '/' }]
+        browse.current.startsWith('/') ? [{ label: '/', path: '/' }] : []
       )
     : [];
 
@@ -97,7 +102,12 @@ export default function FolderPicker({ initialPath, onSelect, onClose }: FolderP
                 <button
                   key={dir}
                   className={styles.dirItem}
-                  onClick={() => navigate(`${browse.current}/${dir}`)}
+                  onClick={() => {
+                    const next = browse.current.endsWith(sep)
+                      ? browse.current + dir
+                      : browse.current + sep + dir;
+                    navigate(next);
+                  }}
                 >
                   <span className={styles.icon}>📁</span>
                   <span>{dir}</span>

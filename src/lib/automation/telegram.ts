@@ -27,7 +27,8 @@ export async function sendTelegramNotification(report: any, projectName?: string
     list += `${statusIcon} [${escapeHtml(item.type || 'Desconhecido')}] ${escapeHtml(item.date || '-')} - R$ ${escapeHtml(item.value || '0,00')}${errorMsg}\n`;
   }
 
-  const message = header + list;
+  const footer = `\n<b>Verifique as informação lançadas no Move, VALIDANDO-AS! Se estiverem ok, basta agora enviar para a aprovação.</b>`;
+  const message = header + list + footer;
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;

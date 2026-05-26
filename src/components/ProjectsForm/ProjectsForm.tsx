@@ -8,6 +8,7 @@ interface Project {
   id: string;
   name: string;
   international: boolean;
+  inactiveDate?: string;
 }
 
 export default function ProjectsForm() {
@@ -39,6 +40,21 @@ export default function ProjectsForm() {
 
   const removeProject = (id: string) => {
     setProjects(prev => prev.filter(p => p.id !== id));
+  };
+
+  const toggleInactive = (id: string) => {
+    setProjects(prev => prev.map(p => {
+      if (p.id === id) {
+        if (p.inactiveDate) {
+          return { ...p, inactiveDate: undefined };
+        } else {
+          const today = new Date();
+          const dateStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
+          return { ...p, inactiveDate: dateStr };
+        }
+      }
+      return p;
+    }));
   };
 
   const toggleIntl = (id: string) => {
@@ -95,9 +111,21 @@ export default function ProjectsForm() {
       ) : (
         <ul className={styles.list}>
           {projects.map(project => (
-            <li key={project.id} className={styles.item}>
-              <span className={styles.projectName}>{project.name}</span>
+            <li key={project.id} className={`${styles.item} ${project.inactiveDate ? styles.itemInactive : ''}`}>
+              <div className={styles.projectInfo}>
+                <span className={styles.projectName}>{project.name}</span>
+                {project.inactiveDate && (
+                  <span className={styles.inactiveDate}>Inativado em {project.inactiveDate}</span>
+                )}
+              </div>
               <div className={styles.itemActions}>
+                <button
+                  className={styles.inactiveBtn}
+                  onClick={() => toggleInactive(project.id)}
+                  title={project.inactiveDate ? "Reativar projeto" : "Inativar projeto"}
+                >
+                  {project.inactiveDate ? "Reativar" : "Inativar"}
+                </button>
                 <label className={styles.toggleLabel}>
                   <span className={`${styles.toggleText} ${project.international ? styles.intlActive : ''}`}>
                     {project.international ? 'Internacional' : 'Nacional'}

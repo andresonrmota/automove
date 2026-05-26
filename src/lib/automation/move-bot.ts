@@ -53,18 +53,22 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
 
   const errors: string[] = [];
   const dailyMealData: Record<string, { total: number, files: string[] }> = {};
+  const monthlyLaundryData: Record<string, { total: number, files: string[] }> = {};
   const year = new Date().getFullYear();
 
   for (const fileName of files) {
     try {
-      const typeChar = fileName[0].toUpperCase();
-      const dayStr = fileName.substring(1, 3);
-      const monthStr = fileName.substring(3, 5);
+      const typeChar = fileName.substring(0, 2).toUpperCase();
+      const dayStr = fileName.substring(2, 4);
+      const monthStr = fileName.substring(4, 6);
+      const yearStr = fileName.substring(6, 8);
       const day = parseInt(dayStr, 10);
       const month = parseInt(monthStr, 10);
-      const rawValue = fileName.substring(5, 10);
+      const parsedYear = parseInt(`20${yearStr}`, 10);
+      const expenseYear = isNaN(parsedYear) ? year : parsedYear;
+      const rawValue = fileName.substring(8, 13);
       
-      const expenseDate = `${dayStr}/${monthStr}/${year}`;
+      const expenseDate = `${dayStr}/${monthStr}/${expenseYear}`;
       const dateKey = `${dayStr}/${monthStr}`;
 
       // Regra dos 60 dias
@@ -73,7 +77,7 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
       const limitDate = new Date(today);
       limitDate.setDate(today.getDate() - 60);
       
-      const expenseDateObj = new Date(year, month - 1, day);
+      const expenseDateObj = new Date(expenseYear, month - 1, day);
       
       if (expenseDateObj < limitDate) {
         errors.push(`Documentos ${fileName} não pode ser enviado por que a MV não aceita nota com data de emissão anterior a 60 dias`);
@@ -87,7 +91,7 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
 
       const valueNumeric = parseFloat(`${parseInt(rawValue.substring(0, 3), 10)}.${rawValue.substring(3, 5)}`);
 
-      if (typeChar === 'A' || typeChar === 'S') {
+      if (typeChar === 'AL') {
         if (!isInternational) {
           if (valueNumeric > 40) {
             errors.push(`A MV estabelece como valor diário máximo para refeição de R$ 40,00. Seu arquivo ${fileName} informa R$ ${valueNumeric.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em ${expenseDate}.`);
@@ -97,6 +101,19 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
           }
           dailyMealData[dateKey].total += valueNumeric;
           dailyMealData[dateKey].files.push(fileName);
+        }
+      }
+
+      if (typeChar === 'LV') {
+        const monthKey = `${monthStr}/${expenseYear}`;
+        if (!monthlyLaundryData[monthKey]) {
+          monthlyLaundryData[monthKey] = { total: 0, files: [] };
+        }
+        monthlyLaundryData[monthKey].total += valueNumeric;
+        monthlyLaundryData[monthKey].files.push(fileName);
+
+        if (valueNumeric > 250) {
+          errors.push(`O limite mensal estabelecido para despesas de Lavanderia é de R$ 250,00. Seu arquivo ${fileName} informa R$ ${valueNumeric.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}.`);
         }
       }
     } catch (e) {
@@ -111,6 +128,15 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
       const fileList = data.files.join(' e ');
       const expenseDate = `${dateKey}/${year}`;
       errors.push(`A MV estabelece como valor diário máximo para refeição de R$ 40,00. Os arquivos ${fileList}, juntos, somam R$ ${data.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} em alimentação em ${expenseDate}.`);
+    }
+  }
+
+  // Validação da somatória mensal de lavanderia
+  for (const monthKey in monthlyLaundryData) {
+    const data = monthlyLaundryData[monthKey];
+    if (data.total > 250 && data.files.length > 1) {
+      const fileList = data.files.join(' e ');
+      errors.push(`O limite mensal para Lavanderia é de R$ 250,00. Os arquivos ${fileList}, juntos, somam R$ ${data.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} no mês ${monthKey}.`);
     }
   }
 
@@ -259,13 +285,16 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
       emitFileStatus(fileName, 'processing', i, files.length);
       log(`\n[AutoMove] 🔄 [${i + 1}/${files.length}] Processando: ${fileName}`);
 
-      // PARSER: [TIPO][DDMM][VALOR]...
-      const typeChar = fileName[0].toUpperCase();
-      const day = fileName.substring(1, 3);
-      const month = fileName.substring(3, 5);
-      const rawValue = fileName.substring(5, 10);
-      const year = new Date().getFullYear();
-      const expenseDate = `${day}/${month}/${year}`;
+      // PARSER: [TIPO][DDMMYY][VALOR]...
+      const typeChar = fileName.substring(0, 2).toUpperCase();
+      const day = fileName.substring(2, 4);
+      const month = fileName.substring(4, 6);
+      const yearStr = fileName.substring(6, 8);
+      const rawValue = fileName.substring(8, 13);
+      const currentYear = new Date().getFullYear();
+      const parsedYear = parseInt(`20${yearStr}`, 10);
+      const expenseYearNum = isNaN(parsedYear) ? currentYear : parsedYear;
+      const expenseDate = `${day}/${month}/${expenseYearNum}`;
 
       const valueInteger = parseInt(rawValue.substring(0, 3), 10);
       const valueCents = rawValue.substring(3, 5);
@@ -273,12 +302,14 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
       const expenseValueNumeric = parseFloat(`${valueInteger}.${valueCents}`);
 
       const typeMapping: Record<string, string> = {
-        'A': 'Alimentação',
-        'T': 'Transportes Urbanos',
-        'S': 'Alimentação',
-        'H': 'Hospedagem',
-        'L': 'Lavanderia',
-        'E': 'Estacionamento'
+        'AL': 'Alimentação',
+        'BG': 'Bagagem',
+        'CB': 'Combustível',
+        'ES': 'Estacionamento',
+        'LV': 'Lavanderia',
+        'PG': 'Pedágio',
+        'TA': 'Taxi APP',
+        'TU': 'Transportes Urbanos'
       };
 
       const expenseType = typeMapping[typeChar] || 'Alimentação';
@@ -376,7 +407,7 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
         const dateInput = page.locator('label:has-text("Data da despesa") + div input, input[name="expenseDate"], input[type="date"]').first();
         const inputType = await dateInput.getAttribute('type');
         if (inputType === 'date') {
-          await dateInput.fill(`${year}-${month}-${day}`);
+          await dateInput.fill(`${expenseYearNum}-${month}-${day}`);
         } else {
           await dateInput.fill(expenseDate);
         }

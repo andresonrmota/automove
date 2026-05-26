@@ -66,3 +66,6 @@ yarn-error.log*
 .pnpm-debug.log*
 .DS_Store
 Thumbs.db
+
+# Exceção explícita para garantir o versionamento do arquivo de instruções
+!INSTRUCOES_DE_BUILD.md

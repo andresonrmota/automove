@@ -6,7 +6,7 @@ export default function TriageForm() {
   const [files, setFiles] = useState<any[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [formData, setFormData] = useState({
-    type: 'A',
+    type: 'AL',
     date: '',
     value: ''
   });
@@ -86,8 +86,34 @@ export default function TriageForm() {
   };
 
   const numericValue = parseFloat(formData.value.replace(/\./g, '').replace(',', '.')) || 0;
-  const isOverLimit = (formData.type === 'A' || formData.type === 'S') && 
-                     numericValue > 40;
+  const isOverLimit = formData.type === 'AL' && numericValue > 40;
+  const isLavanderiaOverLimit = formData.type === 'LV' && numericValue > 250;
+  const hasLimitError = isOverLimit || isLavanderiaOverLimit;
+
+  const checkFutureDate = () => {
+    if (formData.date.length === 10) {
+      const [dd, mm, yyyy] = formData.date.split('/');
+      const selected = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return selected > today;
+    }
+    return false;
+  };
+  const isFutureDate = checkFutureDate();
+
+  const checkPast60Days = () => {
+    if (formData.date.length === 10) {
+      const [dd, mm, yyyy] = formData.date.split('/');
+      const selected = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+      const limit = new Date();
+      limit.setHours(0, 0, 0, 0);
+      limit.setDate(limit.getDate() - 60);
+      return selected < limit;
+    }
+    return false;
+  };
+  const isPast60Days = checkPast60Days();
 
   const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, '');
@@ -95,6 +121,7 @@ export default function TriageForm() {
       setFormData(prev => ({ ...prev, value: '' }));
       return;
     }
+    if (value.length > 5) value = value.slice(0, 5);
     const numValue = (parseInt(value, 10) / 100).toFixed(2);
     const formattedValue = numValue.replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
     setFormData(prev => ({ ...prev, value: formattedValue }));
@@ -102,7 +129,12 @@ export default function TriageForm() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentFile || isOverLimit) return;
+    if (!currentFile || hasLimitError || isFutureDate) return;
+
+    if (isPast60Days) {
+      const proceed = window.confirm("A data informada é inferior a 60 dias da data atual. Isso foge à política da MV.\n\nDeseja realmente prosseguir com o lançamento?");
+      if (!proceed) return;
+    }
 
     setStatus('saving');
     try {
@@ -199,11 +231,14 @@ export default function TriageForm() {
               onChange={e => setFormData({...formData, type: e.target.value})}
               className={styles.select}
             >
-              <option value="A">Alimentação</option>
-              <option value="T">Transporte Urbano</option>
-              <option value="E">Estacionamento</option>
-              <option value="H">Hospedagem</option>
-              <option value="L">Lavanderia</option>
+              <option value="AL">Alimentação</option>
+              <option value="BG">Bagagem</option>
+              <option value="CB">Combustível</option>
+              <option value="ES">Estacionamento</option>
+              <option value="LV">Lavanderia</option>
+              <option value="PG">Pedágio</option>
+              <option value="TA">Taxi APP</option>
+              <option value="TU">Transportes Urbanos</option>
             </select>
           </div>
 
@@ -215,7 +250,7 @@ export default function TriageForm() {
                 placeholder="DD/MM/AAAA"
                 value={formData.date}
                 onChange={handleDateChange}
-                className={styles.input}
+                className={`${styles.input} ${isFutureDate ? styles.inputError : ''}`}
                 required
               />
               <button
@@ -235,6 +270,14 @@ export default function TriageForm() {
                 tabIndex={-1}
               />
             </div>
+            {isFutureDate && (
+              <span className={styles.errorHint}>A data da despesa não pode ser superior à data atual.</span>
+            )}
+            {isPast60Days && !isFutureDate && (
+              <span className={styles.errorHint} style={{ color: '#fbbf24', marginTop: '4px' }}>
+                Atenção: A data informada é inferior a 60 dias da data atual.
+              </span>
+            )}
           </div>
 
           <div className={styles.field}>
@@ -244,11 +287,14 @@ export default function TriageForm() {
               placeholder="Ex: 38,50" 
               value={formData.value}
               onChange={handleValueChange}
-              className={`${styles.input} ${isOverLimit ? styles.inputError : ''}`}
+              className={`${styles.input} ${hasLimitError ? styles.inputError : ''}`}
               required
             />
             {isOverLimit && (
               <span className={styles.errorHint}>O limite máximo para alimentação é R$ 40,00</span>
+            )}
+            {isLavanderiaOverLimit && (
+              <span className={styles.errorHint}>O limite máximo mensal para lavanderia é R$ 250,00</span>
             )}
           </div>
 
@@ -256,7 +302,7 @@ export default function TriageForm() {
             <button 
               type="submit" 
               className={styles.saveButton}
-              disabled={status === 'saving' || isOverLimit}
+              disabled={status === 'saving' || hasLimitError || isFutureDate}
             >
               {status === 'saving' ? 'Salvando...' : 'Salvar e Próximo'}
             </button>

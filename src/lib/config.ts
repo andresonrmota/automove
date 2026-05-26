@@ -12,6 +12,7 @@ export interface Project {
   id: string;
   name: string;
   international: boolean;
+  inactiveDate?: string;
 }
 
 export interface AccessConfig {

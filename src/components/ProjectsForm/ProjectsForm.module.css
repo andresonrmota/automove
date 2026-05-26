@@ -106,6 +106,28 @@
   border-color: rgba(255, 255, 255, 0.15);
 }
 
+.projectInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.inactiveDate {
+  font-size: 0.7rem;
+  color: #fbbf24;
+}
+
+.itemInactive {
+  opacity: 0.6;
+}
+
+.itemInactive .projectName {
+  text-decoration: line-through;
+  color: var(--text-secondary);
+}
+
 .projectName {
   flex: 1;
   font-size: 0.875rem;
@@ -115,6 +137,23 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.inactiveBtn {
+  background: none;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.inactiveBtn:hover {
+  color: #fff;
+  border-color: #fff;
 }
 
 .itemActions {

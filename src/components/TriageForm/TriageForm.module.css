@@ -101,6 +101,11 @@
   border-color: var(--accent-color);
 }
 
+.select option {
+  background: #1a1a1a;
+  color: #fff;
+}
+
 .dateRow {
   display: flex;
   align-items: center;

@@ -225,7 +225,8 @@ ipcMain.handle('process-triage-file', async (event, data: { originalName: string
     const parts = date.split('/');
     const day = parts[0].padStart(2, '0');
     const month = parts[1].padStart(2, '0');
-    const formattedDate = `${day}${month}`;
+    const year = parts[2].substring(2, 4);
+    const formattedDate = `${day}${month}${year}`;
 
     const numericValue = value.replace(',', '').replace('.', '').padStart(5, '0');
 
@@ -410,20 +411,23 @@ ipcMain.handle('preview-automation', async () => {
 
     const currentYear = new Date().getFullYear();
     const TYPE_MAP: Record<string, string> = {
-      A: 'Alimentação',
-      S: 'Alimentação',
-      T: 'Transporte Urbano',
-      H: 'Hospedagem',
-      E: 'Estacionamento',
-      L: 'Lavanderia',
+      AL: 'Alimentação',
+      BG: 'Bagagem',
+      CB: 'Combustível',
+      ES: 'Estacionamento',
+      LV: 'Lavanderia',
+      PG: 'Pedágio',
+      TA: 'Taxi APP',
+      TU: 'Transportes Urbanos',
     };
 
     const items = files.map(fileName => {
       try {
-        const typeChar = fileName[0].toUpperCase();
-        const dayStr = fileName.substring(1, 3);
-        const monthStr = fileName.substring(3, 5);
-        const rawValue = fileName.substring(5, 10);
+        const typeChar = fileName.substring(0, 2).toUpperCase();
+        const dayStr = fileName.substring(2, 4);
+        const monthStr = fileName.substring(4, 6);
+        const yearStr = fileName.substring(6, 8);
+        const rawValue = fileName.substring(8, 13);
 
         const day = parseInt(dayStr, 10);
         const month = parseInt(monthStr, 10);
@@ -432,7 +436,8 @@ ipcMain.handle('preview-automation', async () => {
         const valueNumeric = parseFloat(`${valueInteger}.${valueCents}`);
 
         const type = TYPE_MAP[typeChar] ?? 'Outro';
-        const date = `${dayStr}/${monthStr}/${currentYear}`;
+        const fullYear = parseInt(`20${yearStr}`, 10);
+        const date = `${dayStr}/${monthStr}/${isNaN(fullYear) ? currentYear : fullYear}`;
         const value = valueNumeric.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
         if (isNaN(day) || isNaN(month) || isNaN(valueNumeric)) {

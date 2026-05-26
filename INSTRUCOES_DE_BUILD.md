@@ -51,3 +51,25 @@ Os arquivos compilados (incluindo o `.dmg`) poderão ser encontrados no diretór
 
 - **Pré-requisitos:** Certifique-se de ter executado `npm install` caso seja a primeira vez que você está executando ou fazendo build do projeto, ou após qualquer mudança nas dependências do `package.json`.
 - **Arquivos Finais:** Todo o resultado dos comandos de distribuição (`npm run dist` ou `npm run dist:mac`) ficará disponível na pasta `/dist` na raiz do seu projeto.
+
+---
+
+## 4. Atualização e Distribuição de Novas Versões
+
+Quando você for lançar uma nova versão da aplicação (por exemplo, atualizando para `1.4.0`), o padrão da indústria e do GitHub é **manter o histórico**. Siga este fluxo:
+
+1. **Atualize a versão no código:**
+   - No `package.json`, altere o `"version": "1.3.0"` para a nova versão.
+   - Em `src/lib/version.ts`, atualize a constante `APP_VERSION`.
+2. **Gere os instaladores:**
+   - Rode `npm run dist` para gerar os arquivos atualizados (e `npm run dist:mac` caso esteja num ambiente macOS).
+3. **Distribuição via GitHub Releases:**
+   - **Nunca exclua as versões anteriores.** O GitHub serve justamente como um acervo histórico do seu projeto.
+   - Acesse o repositório no GitHub, vá na barra lateral em **"Releases"** e clique em **"Draft a new release"**.
+   - Digite o nome da nova tag (ex: `v1.4.0`).
+   - Adicione o título, escreva as notas da atualização (o que mudou nesta versão) e arraste os novos instaladores (`.exe` e `.dmg`) gerados na pasta `/dist` para a caixa de upload.
+   - Clique em **"Publish release"**.
+4. **Atualize o Site de Downloads:**
+   - Abra o código do seu projeto Vercel (`developer-dashboard`).
+   - Edite o arquivo `src/components/DownloadsPage.tsx` e troque a versão (ex: `v1.3.0` para `v1.4.0`) diretamente nas URLs dos botões de download.
+   - Faça o commit e o Push desse repositório. O Vercel atualizará sua página de downloads automaticamente, que passará a baixar os arquivos da nova Release do GitHub!

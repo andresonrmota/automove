@@ -13,11 +13,18 @@ export default function TriageForm() {
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [baseFolder, setBaseFolder] = useState('');
+  const [projects, setProjects] = useState<{ id: string; name: string; international: boolean }[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState('');
   const datePickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getSettings()
-      .then(data => setBaseFolder(data.folders?.baseFolder ?? ''))
+      .then(data => {
+        setBaseFolder(data.folders?.baseFolder ?? '');
+        const projs = data.projects ?? [];
+        setProjects(projs);
+        // Não forçamos a seleção automática, deixamos vazio ou o primeiro
+      })
       .catch(() => {});
   }, []);
 
@@ -85,8 +92,12 @@ export default function TriageForm() {
     return '';
   };
 
+  const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const isInternational = selectedProject?.international === true;
+
   const numericValue = parseFloat(formData.value.replace(/\./g, '').replace(',', '.')) || 0;
-  const isOverLimit = formData.type === 'AL' && numericValue > 40;
+  // Se for internacional, não bloqueia AL acima de 40.
+  const isOverLimit = formData.type === 'AL' && !isInternational && numericValue > 40;
   const isLavanderiaOverLimit = formData.type === 'LV' && numericValue > 250;
   const hasLimitError = isOverLimit || isLavanderiaOverLimit;
 
@@ -156,6 +167,7 @@ export default function TriageForm() {
           if (currentIndex >= newFiles.length && newFiles.length > 0) {
             setCurrentIndex(newFiles.length - 1);
           }
+          setFormData(prev => ({ ...prev, value: '' }));
         }, 1000);
       } else {
         setStatus('error');
@@ -224,6 +236,23 @@ export default function TriageForm() {
       <div className={styles.formSection}>
         <h3 className={styles.formTitle}>Preparar Lançamento</h3>
         <form onSubmit={handleSave} className={styles.form}>
+          <div className={styles.field}>
+            <label>Projeto</label>
+            <select 
+              value={selectedProjectId} 
+              onChange={e => setSelectedProjectId(e.target.value)}
+              className={styles.select}
+              required
+            >
+              <option value="" disabled>Selecione o projeto...</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}{p.international ? ' 🌐' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className={styles.field}>
             <label>Tipo de Despesa</label>
             <select 

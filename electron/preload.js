@@ -24,5 +24,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const subscription = (event, data) => callback(data);
     ipcRenderer.on('automation-log', subscription);
     return () => ipcRenderer.removeListener('automation-log', subscription);
-  }
+  },
+  exportSettings: (password) => ipcRenderer.invoke('export-settings', password),
+  importSettings: (password) => ipcRenderer.invoke('import-settings', password)
 });

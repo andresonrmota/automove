@@ -151,7 +151,6 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
 
   log('[AutoMove] ✅ Diagnóstico aprovado! Abrindo portal...');
 
-  // --- 2. INICIALIZAÇÃO DO BROWSER ---
   const launchOptions: any = {
     headless: access.headless,
     slowMo: 50
@@ -165,20 +164,42 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
                fs.existsSync('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe')) {
       launchOptions.channel = 'msedge';
     }
+  } else if (process.platform === 'darwin') {
+    if (fs.existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')) {
+      launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+    } else if (fs.existsSync('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge')) {
+      launchOptions.executablePath = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
+    }
   }
 
-  const browser = await chromium.launch(launchOptions);
+  // Usar profile temporário para forçar uma nova instância isolada
+  const crypto = require('crypto');
+  const os = require('os');
+  const tempProfilePath = path.join(os.tmpdir(), `automove-pw-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
   
-  const context = await browser.newContext({
+  const context = await chromium.launchPersistentContext(tempProfilePath, {
+    ...launchOptions,
     viewport: { width: 1280, height: 720 },
     userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
   });
+  
+  // Guardamos o contexto na variavel browser para podermos fechar depois, 
+  // já que o código original faz browser.close() no final
+  const browser = context;
 
   const page = await context.newPage();
 
   try {
-    log('[AutoMove] 🌐 Acessando portal MOVE...');
-    await page.goto('https://move.mv.com.br/', { waitUntil: 'networkidle' });
+    try {
+      log('[AutoMove] 🌐 Acessando portal MOVE...');
+      await page.goto('https://move.mv.com.br/', { waitUntil: 'networkidle', timeout: 45000 });
+    } catch (e: any) {
+      return {
+        success: false,
+        error: 'CONNECTION_FAILED',
+        details: ['O site da MV (portal MOVE) não respondeu ou está fora do ar no momento. A automação não pôde ser iniciada. Tente novamente mais tarde.']
+      };
+    }
 
     // 1. LOGIN
     log('[AutoMove] 🔑 Realizando login...');

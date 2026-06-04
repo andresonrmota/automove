@@ -5,6 +5,7 @@ import os from 'os';
 import { pathToFileURL } from 'url';
 import { exec } from 'child_process';
 import { chromium } from 'playwright';
+import crypto from 'crypto';
 
 // Importar funções de configuração e automação
 import {
@@ -327,8 +328,8 @@ ipcMain.handle('open-folder', async (event, folderPath: string) => {
 });
 
 // 6. Validar Acesso MOVE (Playwright)
-ipcMain.handle('validate-access', async (event, data: { user: string; pass: string; client: string }) => {
-  const { user, pass, client } = data;
+ipcMain.handle('validate-access', async (event, data: { user: string; pass: string; client: string; headless?: boolean }) => {
+  const { user, pass, client, headless } = data;
 
   if (!user || !pass || !client) {
     return { success: false, error: 'Preencha todos os campos antes de validar.' };
@@ -336,7 +337,7 @@ ipcMain.handle('validate-access', async (event, data: { user: string; pass: stri
 
   let browser;
   try {
-    const launchOptions: any = { headless: true, slowMo: 30 };
+    const launchOptions: any = { headless: headless ?? true, slowMo: 30 };
     if (process.platform === 'win32') {
       if (fs.existsSync('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe') || 
           fs.existsSync('C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe')) {
@@ -345,18 +346,33 @@ ipcMain.handle('validate-access', async (event, data: { user: string; pass: stri
                  fs.existsSync('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe')) {
         launchOptions.channel = 'msedge';
       }
+    } else if (process.platform === 'darwin') {
+      if (fs.existsSync('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')) {
+        launchOptions.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+      } else if (fs.existsSync('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge')) {
+        launchOptions.executablePath = '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge';
+      }
     }
-    browser = await chromium.launch(launchOptions);
-    const context = await browser.newContext({
+    
+    // Usar profile temporário para forçar uma nova instância isolada
+    const tempProfilePath = path.join(os.tmpdir(), `automove-pw-${Date.now()}`);
+    const context = await chromium.launchPersistentContext(tempProfilePath, {
+      ...launchOptions,
       viewport: { width: 1280, height: 720 },
       userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     });
-    const page = await context.newPage();
+    
+    browser = context; // Guardar referência para poder fechar depois
+    const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
 
-    await page.goto('https://move.mv.com.br/', { waitUntil: 'networkidle', timeout: 20000 });
+    try {
+      await page.goto('https://move.mv.com.br/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    } catch (e: any) {
+      throw new Error('O site da MV (portal MOVE) não respondeu ou está fora do ar no momento. Verifique sua conexão com a internet ou tente novamente mais tarde.');
+    }
 
     const userField = page.locator('input.MuiOutlinedInput-input').nth(0);
-    await userField.waitFor({ state: 'visible', timeout: 10000 });
+    await userField.waitFor({ state: 'visible', timeout: 15000 });
     await userField.fill(user);
 
     const passField = page.locator('input[type="password"]');
@@ -373,8 +389,9 @@ ipcMain.handle('validate-access', async (event, data: { user: string; pass: stri
     await page.locator('button.MuiButton-contained').click();
 
     const outcome = await Promise.race([
-      page.waitForURL('**/site**', { timeout: 15000 }).then(() => 'success' as const),
-      page.waitForSelector('text="Usuário ou senha inválidos"', { timeout: 15000 }).then(() => 'invalid' as const),
+      page.waitForURL('**/site**', { timeout: 20000 }).then(() => 'success' as const),
+      page.waitForSelector('text="Usuário ou senha inválidos"', { timeout: 20000 }).then(() => 'invalid' as const),
+      page.waitForSelector('text="Credenciais Inválidas"', { timeout: 20000 }).then(() => 'invalid' as const)
     ]).catch(() => 'timeout' as const);
 
     await browser.close();
@@ -384,7 +401,7 @@ ipcMain.handle('validate-access', async (event, data: { user: string; pass: stri
     } else if (outcome === 'invalid') {
       return { success: false, error: 'Usuário ou senha inválidos no portal MOVE.' };
     } else {
-      return { success: false, error: 'Portal MOVE não respondeu. Verifique sua conexão.' };
+      return { success: false, error: 'Portal MOVE não respondeu após o login. Verifique as credenciais e a conexão.' };
     }
   } catch (err: any) {
     if (browser) await browser.close();
@@ -516,8 +533,105 @@ ipcMain.handle('run-automation', async (event, project: any) => {
       }
     });
 
-    return { ...result, success: true };
+    return result;
   } catch (err: any) {
     return { success: false, error: err.message || 'Erro fatal na automação.' };
+  }
+});
+
+// 10. Exportar / Importar Configurações Seguras
+const ALGORITHM = 'aes-256-cbc';
+const deriveKey = (password: string) => crypto.scryptSync(password, 'salt-automove', 32);
+
+ipcMain.handle('export-settings', async (event, password: string) => {
+  if (!mainWindow) return { success: false, error: 'Janela principal não encontrada' };
+
+  try {
+    const folders = getFolderConfig();
+    const projects = getProjects();
+    const access = getAccessConfig();
+    const telegram = getTelegramConfig();
+
+    const dataPayload = JSON.stringify({ folders, projects, access, telegram });
+
+    const key = deriveKey(password);
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+
+    let encrypted = cipher.update(dataPayload, 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+
+    const finalData = JSON.stringify({
+      iv: iv.toString('hex'),
+      data: encrypted
+    });
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Exportar Configurações',
+      defaultPath: 'meus-dados.automove',
+      filters: [{ name: 'Arquivos AutoMove', extensions: ['automove'] }]
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: false, canceled: true };
+    }
+
+    fs.writeFileSync(result.filePath, finalData, 'utf8');
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro ao exportar configurações.' };
+  }
+});
+
+ipcMain.handle('import-settings', async (event, password: string) => {
+  if (!mainWindow) return { success: false, error: 'Janela principal não encontrada' };
+
+  try {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Importar Configurações',
+      properties: ['openFile'],
+      filters: [{ name: 'Arquivos AutoMove', extensions: ['automove'] }]
+    });
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, canceled: true };
+    }
+
+    const filePath = result.filePaths[0];
+    const fileContent = fs.readFileSync(filePath, 'utf8');
+    
+    let parsedFile;
+    try {
+      parsedFile = JSON.parse(fileContent);
+    } catch {
+      return { success: false, error: 'O arquivo selecionado não é válido ou está corrompido.' };
+    }
+
+    if (!parsedFile.iv || !parsedFile.data) {
+      return { success: false, error: 'Formato de arquivo inválido.' };
+    }
+
+    const key = deriveKey(password);
+    const iv = Buffer.from(parsedFile.iv, 'hex');
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+
+    let decrypted;
+    try {
+      decrypted = decipher.update(parsedFile.data, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+    } catch {
+      return { success: false, error: 'Senha incorreta ou arquivo corrompido.' };
+    }
+
+    const settingsData = JSON.parse(decrypted);
+
+    if (settingsData.folders) saveFolderConfig(settingsData.folders);
+    if (settingsData.projects) saveProjects(settingsData.projects);
+    if (settingsData.access) saveAccessConfig(settingsData.access);
+    if (settingsData.telegram) saveTelegramConfig(settingsData.telegram);
+
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Erro inesperado ao importar.' };
   }
 });

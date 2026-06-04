@@ -21,7 +21,27 @@ export async function sendTelegramNotification(report: any, projectName?: string
   const header = `🤖 <b>AutoMove: Processamento Concluído!</b>\n${escapeHtml(projectInfo)}\n<b>Resumo:</b>\nTotal processado: ${report.count} arquivo(s)\nTotal valor: R$ ${escapeHtml(String(report.total))}\n\n<b>Lançamentos:</b>\n`;
 
   let list = '';
-  for (const item of report.items) {
+  
+  // Função auxiliar para converter DD/MM/YYYY em um número YYYYMMDD para ordenação
+  const parseDateForSort = (dateStr?: string): number => {
+    if (!dateStr || typeof dateStr !== 'string') return 0;
+    const parts = dateStr.split('/');
+    if (parts.length >= 3) {
+      const day = parts[0].padStart(2, '0');
+      const month = parts[1].padStart(2, '0');
+      let year = parts[2];
+      if (year.length === 2) year = '20' + year;
+      return parseInt(`${year}${month}${day}`, 10);
+    }
+    return 0;
+  };
+
+  // Ordenar os itens cronologicamente (do mais antigo para o mais recente)
+  const sortedItems = [...(report.items || [])].sort((a, b) => {
+    return parseDateForSort(a.date) - parseDateForSort(b.date);
+  });
+
+  for (const item of sortedItems) {
     const statusIcon = item.status === 'success' ? '✅' : '❌';
     const errorMsg = item.status === 'error' ? ` (${escapeHtml(item.message || 'Erro ao lançar')})` : '';
     list += `${statusIcon} [${escapeHtml(item.type || 'Desconhecido')}] ${escapeHtml(item.date || '-')} - R$ ${escapeHtml(item.value || '0,00')}${errorMsg}\n`;

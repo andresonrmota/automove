@@ -1,6 +1,6 @@
 {
   "name": "automove",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -11,8 +11,7 @@
     "electron:bundle": "esbuild electron/main.ts --bundle --platform=node --target=node20 --outfile=dist-electron/main.js --external:electron --external:playwright --external:playwright-core && esbuild electron/preload.js --bundle --platform=node --outfile=dist-electron/preload.js --external:electron",
     "dev:electron": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && npm run electron:bundle && electron dist-electron/main.js\"",
     "build:electron": "npm run build && npm run electron:bundle",
-    "dist": "npm run build:electron && electron-builder",
-    "dist:mac": "electron-builder --mac"
+    "dist:mac": "npm run build:electron && electron-builder --mac"
   },
   "build": {
     "appId": "com.automove.app",
@@ -29,13 +28,15 @@
       "target": "nsis"
     },
     "mac": {
-      "target": {
-        "target": "dmg",
-        "arch": [
-          "x64",
-          "arm64"
-        ]
-      },
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.productivity"
     },
     "nsis": {
@@ -56,7 +57,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "concurrently": "^9.2.1",
-    "electron": "^42.2.0",
+    "electron": "^42.3.2",
     "electron-builder": "^26.8.1",
     "esbuild": "^0.28.0",
     "eslint": "^9",

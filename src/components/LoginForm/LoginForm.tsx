@@ -49,6 +49,14 @@ export default function LoginForm() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setPreviewLoading(true);
+    // Limpa a tela de fundo (dados de execução anterior) para não confundir o usuário
+    setReport(null);
+    setStatus('idle');
+    setMessage('');
+    setConsoleLogs([]);
+    setAutomationFiles([]);
+    setDiagnosticErrors([]);
+
     try {
       const data = await previewAutomation();
       setPreviewItems(data.items ?? []);

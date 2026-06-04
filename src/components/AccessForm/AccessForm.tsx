@@ -36,7 +36,7 @@ export default function AccessForm() {
     setValidating(true);
     setValidationResult(null);
     try {
-      const data = await validateAccess({ user: form.user, pass: form.pass, client: form.client });
+      const data = await validateAccess({ user: form.user, pass: form.pass, client: form.client, headless: form.headless });
       if (data.success) {
         setValidationResult({ type: 'success', message: 'Credenciais válidas! Login realizado com sucesso.' });
       } else {

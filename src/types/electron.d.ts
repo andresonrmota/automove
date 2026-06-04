@@ -19,6 +19,8 @@ export interface ElectronAPI {
   
   runAutomation: (project: any) => Promise<any>;
   onAutomationLog: (callback: (data: any) => void) => () => void;
+  exportSettings: (password: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
+  importSettings: (password: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
 }
 
 declare global {

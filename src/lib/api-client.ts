@@ -69,6 +69,20 @@ export async function processTriageFile(payload: any) {
   });
 }
 
+export async function openFilePath(filePath: string) {
+  if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.openFilePath) {
+    return window.electronAPI.openFilePath(filePath);
+  }
+  return { success: false, error: 'Apenas para ambiente Desktop' };
+}
+
+export async function showItemInFolder(filePath: string) {
+  if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.showItemInFolder) {
+    return window.electronAPI.showItemInFolder(filePath);
+  }
+  return { success: false, error: 'Apenas para ambiente Desktop' };
+}
+
 export async function browseDirs(pathStr?: string) {
   if (typeof window !== 'undefined' && window.electronAPI) {
     return window.electronAPI.browseDirs(pathStr);

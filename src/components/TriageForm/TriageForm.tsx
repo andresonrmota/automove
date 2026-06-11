@@ -8,13 +8,15 @@ export default function TriageForm() {
   const [formData, setFormData] = useState({
     type: 'AL',
     date: '',
-    value: ''
+    value: '',
+    description: ''
   });
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [baseFolder, setBaseFolder] = useState('');
   const [projects, setProjects] = useState<{ id: string; name: string; international: boolean }[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [isZoomed, setIsZoomed] = useState(false);
   const datePickerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -28,6 +30,16 @@ export default function TriageForm() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isZoomed) {
+        setIsZoomed(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isZoomed]);
+
   const handleSelectFolder = async () => {
     const res = await openDirectoryDialog();
     if (!res.canceled && res.path) {
@@ -37,11 +49,7 @@ export default function TriageForm() {
         const data = await listTriageFiles();
         if (data.files) {
           setFiles(data.files);
-          const today = new Date();
-          const dd = String(today.getDate()).padStart(2, '0');
-          const mm = String(today.getMonth() + 1).padStart(2, '0');
-          const yyyy = today.getFullYear();
-          setFormData(prev => ({ ...prev, date: `${dd}/${mm}/${yyyy}` }));
+          setFormData(prev => ({ ...prev, date: '' }));
         }
       } catch (err) {
         console.error(err);
@@ -56,11 +64,7 @@ export default function TriageForm() {
       if (data.files) {
         setFiles(data.files);
         // Resetar formulário com data atual
-        const today = new Date();
-        const dd = String(today.getDate()).padStart(2, '0');
-        const mm = String(today.getMonth() + 1).padStart(2, '0');
-        const yyyy = today.getFullYear();
-        setFormData(prev => ({ ...prev, date: `${dd}/${mm}/${yyyy}` }));
+        setFormData(prev => ({ ...prev, date: '' }));
       }
     } catch (err) {
       console.error('Erro ao carregar arquivos:', err);
@@ -167,7 +171,7 @@ export default function TriageForm() {
           if (currentIndex >= newFiles.length && newFiles.length > 0) {
             setCurrentIndex(newFiles.length - 1);
           }
-          setFormData(prev => ({ ...prev, value: '' }));
+          setFormData(prev => ({ ...prev, type: 'AL', date: '', value: '', description: '' }));
         }, 1000);
       } else {
         setStatus('error');
@@ -228,13 +232,37 @@ export default function TriageForm() {
           {currentFile.name.toLowerCase().endsWith('.pdf') ? (
             <iframe src={currentFile.path} className={styles.pdfViewer} title="PDF Preview" />
           ) : (
-            <img src={currentFile.path} alt="Recibo" className={styles.receiptImage} />
+            <img 
+              src={currentFile.path} 
+              alt="Recibo" 
+              className={styles.receiptImage} 
+              onClick={() => setIsZoomed(true)}
+              style={{ cursor: 'zoom-in' }}
+              title="Clique para ampliar"
+            />
           )}
         </div>
       </div>
 
       <div className={styles.formSection}>
-        <h3 className={styles.formTitle}>Preparar Lançamento</h3>
+        <div className={styles.navigation}>
+          <button 
+            disabled={currentIndex === 0} 
+            type="button"
+            onClick={() => setCurrentIndex(currentIndex - 1)}
+            className={styles.navButton}
+          >
+            ← Anterior
+          </button>
+          <button 
+            disabled={currentIndex === files.length - 1} 
+            type="button"
+            onClick={() => setCurrentIndex(currentIndex + 1)}
+            className={styles.navButton}
+          >
+            Próximo →
+          </button>
+        </div>
         <form onSubmit={handleSave} className={styles.form}>
           <div className={styles.field}>
             <label>Projeto</label>
@@ -245,7 +273,7 @@ export default function TriageForm() {
               required
             >
               <option value="" disabled>Selecione o projeto...</option>
-              {projects.map(p => (
+              {projects.filter(p => !p.inactiveDate).map(p => (
                 <option key={p.id} value={p.id}>
                   {p.name}{p.international ? ' 🌐' : ''}
                 </option>
@@ -327,6 +355,18 @@ export default function TriageForm() {
             )}
           </div>
 
+          <div className={styles.field}>
+            <label>Descrição Específica (Opcional)</label>
+            <input 
+              type="text" 
+              placeholder="Ex: Jantar com cliente" 
+              value={formData.description}
+              onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              maxLength={60}
+              className={styles.input}
+            />
+          </div>
+
           <div className={styles.actions}>
             <button 
               type="submit" 
@@ -343,24 +383,14 @@ export default function TriageForm() {
             </div>
           )}
         </form>
-
-        <div className={styles.navigation}>
-          <button 
-            disabled={currentIndex === 0} 
-            onClick={() => setCurrentIndex(currentIndex - 1)}
-            className={styles.navButton}
-          >
-            ← Anterior
-          </button>
-          <button 
-            disabled={currentIndex === files.length - 1} 
-            onClick={() => setCurrentIndex(currentIndex + 1)}
-            className={styles.navButton}
-          >
-            Próximo →
-          </button>
-        </div>
       </div>
+
+      {isZoomed && !currentFile.name.toLowerCase().endsWith('.pdf') && (
+        <div className={styles.zoomOverlay} onClick={() => setIsZoomed(false)}>
+          <button className={styles.closeZoom} onClick={(e) => { e.stopPropagation(); setIsZoomed(false); }}>&times;</button>
+          <img src={currentFile.path} alt="Recibo Ampliado" className={styles.zoomedImage} onClick={(e) => e.stopPropagation()} />
+        </div>
+      )}
     </div>
   );
 }

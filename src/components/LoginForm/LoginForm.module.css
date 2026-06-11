@@ -324,6 +324,29 @@
   cursor: not-allowed;
 }
 
+.actionButtons {
+  display: flex;
+  gap: 16px;
+  width: 100%;
+}
+
+.actionButtons .button {
+  flex: 1;
+}
+
+.secondaryButton {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  box-shadow: none;
+}
+
+.secondaryButton:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
 .loading {
   animation: pulse 2s infinite;
 }

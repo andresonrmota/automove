@@ -1,6 +1,7 @@
 'use client';
 
 import styles from './ConfirmModal.module.css';
+import { openFilePath, showItemInFolder } from '@/lib/api-client';
 
 interface ExpenseItem {
   fileName: string;
@@ -14,9 +15,11 @@ interface Props {
   items: ExpenseItem[];
   onConfirm: () => void;
   onCancel: () => void;
+  previewOnly?: boolean;
+  project?: any;
 }
 
-export default function ConfirmModal({ items, onConfirm, onCancel }: Props) {
+export default function ConfirmModal({ items, onConfirm, onCancel, previewOnly, project }: Props) {
   const valid = items.filter(i => !i.error);
   const invalid = items.filter(i => i.error);
 
@@ -24,6 +27,19 @@ export default function ConfirmModal({ items, onConfirm, onCancel }: Props) {
     const v = parseFloat(i.value!.replace('.', '').replace(',', '.'));
     return sum + (isNaN(v) ? 0 : v);
   }, 0);
+
+  const alimentacaoPorData = valid
+    .filter(i => i.type === 'Alimentação')
+    .reduce((acc: any, i) => {
+      const v = parseFloat(i.value!.replace('.', '').replace(',', '.'));
+      const d = i.date || 'unknown';
+      acc[d] = (acc[d] || 0) + (isNaN(v) ? 0 : v);
+      return acc;
+    }, {});
+
+  const warnings = Object.keys(alimentacaoPorData)
+    .filter(d => alimentacaoPorData[d] > 40 && project && !project.international)
+    .map(d => `Alimentação no dia ${d} soma R$ ${alimentacaoPorData[d].toLocaleString('pt-BR', { minimumFractionDigits: 2 })} (acima de R$ 40,00).`);
 
   return (
     <div className={styles.overlay} onClick={onCancel}>
@@ -41,9 +57,23 @@ export default function ConfirmModal({ items, onConfirm, onCancel }: Props) {
               <div className={styles.itemDate}>{item.date}</div>
               <div className={styles.itemType}>{item.type}</div>
               <div className={styles.itemValue}>R$ {item.value}</div>
+              <div className={styles.itemActions}>
+                <button title="Visualizar documento" onClick={() => openFilePath(item.fileName)}>👁️</button>
+                <button title="Abrir pasta do arquivo" onClick={() => showItemInFolder(item.fileName)}>📁</button>
+              </div>
             </div>
           ))}
         </div>
+
+        {warnings.length > 0 && (
+          <div className={styles.alimentacaoWarning}>
+            <span>⚠️</span>
+            <div>
+              {warnings.map((w, i) => <div key={i} className={styles.warningLine}>{w}</div>)}
+              <small>Verifique os comprovantes antes de enviar.</small>
+            </div>
+          </div>
+        )}
 
         {invalid.length > 0 && (
           <div className={styles.invalidWarning}>
@@ -60,10 +90,16 @@ export default function ConfirmModal({ items, onConfirm, onCancel }: Props) {
         </div>
 
         <div className={styles.actions}>
-          <button className={styles.cancelBtn} onClick={onCancel}>Cancelar</button>
-          <button className={styles.confirmBtn} onClick={onConfirm} disabled={valid.length === 0}>
-            Confirmar e Iniciar
-          </button>
+          {previewOnly ? (
+            <button className={styles.cancelBtn} onClick={onCancel} style={{ width: '100%' }}>Fechar Prévia</button>
+          ) : (
+            <>
+              <button className={styles.cancelBtn} onClick={onCancel}>Cancelar</button>
+              <button className={styles.confirmBtn} onClick={onConfirm} disabled={valid.length === 0}>
+                Confirmar e Iniciar
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

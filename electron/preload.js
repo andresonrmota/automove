@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   listTriageFiles: () => ipcRenderer.invoke('list-triage-files'),
   processTriageFile: (payload) => ipcRenderer.invoke('process-triage-file', payload),
+  openFilePath: (filePath) => ipcRenderer.invoke('open-file-path', filePath),
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
   
   browseDirs: (path) => ipcRenderer.invoke('browse-dirs', path),
   getHomeDir: () => ipcRenderer.invoke('get-home-dir'),

@@ -298,6 +298,12 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
     let totalValue = 0;
     let processedCount = 0;
 
+    const metadataPath = path.join(uploadsDir, 'metadata.json');
+    let metadataStore: Record<string, string> = {};
+    if (fs.existsSync(metadataPath)) {
+      try { metadataStore = JSON.parse(fs.readFileSync(metadataPath, 'utf8')); } catch(e){}
+    }
+
     for (let i = 0; i < files.length; i++) {
       const fileName = files[i];
       const filePath = path.join(uploadsDir, fileName);
@@ -444,7 +450,9 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
         const descInput = page.locator('label:has-text("Descrição") + div textarea, label:has-text("Descrição") + div input, textarea[name="description"]').first();
         await descInput.waitFor({ state: 'visible', timeout: 10000 });
         await descInput.click();
-        await descInput.fill(`DESPESA COM ${expenseType.toUpperCase()}`);
+        const customDescription = metadataStore[fileName];
+        const finalDescription = customDescription || `DESPESA COM ${expenseType.toUpperCase()}`;
+        await descInput.fill(finalDescription);
         await page.waitForTimeout(1000);
 
         // ANEXO

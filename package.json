@@ -1,6 +1,6 @@
 {
   "name": "automove",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "private": true,
   "main": "dist-electron/main.js",
   "scripts": {
@@ -11,6 +11,7 @@
     "electron:bundle": "esbuild electron/main.ts --bundle --platform=node --target=node20 --outfile=dist-electron/main.js --external:electron --external:playwright --external:playwright-core && esbuild electron/preload.js --bundle --platform=node --outfile=dist-electron/preload.js --external:electron",
     "dev:electron": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && npm run electron:bundle && electron dist-electron/main.js\"",
     "build:electron": "npm run build && npm run electron:bundle",
+    "dist": "npm run build:electron && electron-builder --win",
     "dist:mac": "npm run build:electron && electron-builder --mac"
   },
   "build": {

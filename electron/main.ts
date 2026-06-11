@@ -211,7 +211,7 @@ ipcMain.handle('list-triage-files', () => {
   }
 });
 
-ipcMain.handle('process-triage-file', async (event, data: { originalName: string; type: string; date: string; value: string }) => {
+ipcMain.handle('process-triage-file', async (event, data: { originalName: string; type: string; date: string; value: string; description?: string }) => {
   try {
     const { baseFolder } = getFolderConfig();
     if (!baseFolder) throw new Error('Pasta Base não configurada');
@@ -221,7 +221,7 @@ ipcMain.handle('process-triage-file', async (event, data: { originalName: string
       fs.mkdirSync(triados, { recursive: true });
     }
 
-    const { originalName, type, date, value } = data;
+    const { originalName, type, date, value, description } = data;
 
     const parts = date.split('/');
     const day = parts[0].padStart(2, '0');
@@ -239,9 +239,45 @@ ipcMain.handle('process-triage-file', async (event, data: { originalName: string
 
     fs.renameSync(oldPath, newPath);
 
+    if (description) {
+      const metadataPath = path.join(triados, 'metadata.json');
+      let metadata: Record<string, string> = {};
+      if (fs.existsSync(metadataPath)) {
+        try { metadata = JSON.parse(fs.readFileSync(metadataPath, 'utf8')); } catch(e){}
+      }
+      metadata[newName] = description;
+      fs.writeFileSync(metadataPath, JSON.stringify(metadata, null, 2));
+    }
+
     return { success: true, newName };
   } catch (err: any) {
     return { error: err.message || 'Erro ao processar arquivo' };
+  }
+});
+
+ipcMain.handle('open-file-path', async (event, filePath: string) => {
+  try {
+    const { baseFolder } = getFolderConfig();
+    if (!baseFolder) throw new Error('Pasta base não configurada');
+    const fullPath = path.join(baseFolder, 'Triados', filePath);
+    if (!fs.existsSync(fullPath)) throw new Error('Arquivo não encontrado');
+    await shell.openPath(fullPath);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('show-item-in-folder', async (event, filePath: string) => {
+  try {
+    const { baseFolder } = getFolderConfig();
+    if (!baseFolder) throw new Error('Pasta base não configurada');
+    const fullPath = path.join(baseFolder, 'Triados', filePath);
+    if (!fs.existsSync(fullPath)) throw new Error('Arquivo não encontrado');
+    shell.showItemInFolder(fullPath);
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 });
 

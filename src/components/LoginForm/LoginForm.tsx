@@ -22,6 +22,7 @@ export default function LoginForm() {
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const [previewItems, setPreviewItems] = useState<any[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
@@ -38,6 +39,10 @@ export default function LoginForm() {
         setFoldersConfigured(!!baseFolder);
         const list = data.projects ?? [];
         setProjects(list);
+        const activeProjects = list.filter(p => !p.inactiveDate);
+        if (activeProjects.length > 0) {
+          setSelectedProjectId(activeProjects[0].id);
+        }
         const acc = data.access ?? {};
         setAccessUser(acc.user ?? '');
         setAccessHeadless(acc.headless ?? true);
@@ -46,8 +51,7 @@ export default function LoginForm() {
       .catch(() => setFoldersConfigured(false));
   }, [activeTab]);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const loadPreview = async () => {
     setPreviewLoading(true);
     // Limpa a tela de fundo (dados de execução anterior) para não confundir o usuário
     setReport(null);
@@ -65,6 +69,18 @@ export default function LoginForm() {
     } finally {
       setPreviewLoading(false);
     }
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsPreviewMode(false);
+    await loadPreview();
+  };
+
+  const handlePreviewClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsPreviewMode(true);
+    await loadPreview();
   };
 
   const handleConfirm = async () => {
@@ -213,7 +229,7 @@ export default function LoginForm() {
                     disabled={status === 'running'}
                   >
                     <option value="" disabled>Selecione o projeto...</option>
-                    {projects.map(p => (
+                    {projects.filter(p => !p.inactiveDate).map(p => (
                       <option key={p.id} value={p.id}>
                         {p.name}{p.international ? ' 🌐' : ''}
                       </option>
@@ -222,13 +238,23 @@ export default function LoginForm() {
                 </div>
               )}
 
-              <button
-                type="submit"
-                className={`${styles.button} ${(status === 'running' || previewLoading) ? styles.loading : ''}`}
-                disabled={status === 'running' || previewLoading || !accessConfigured || projects.length === 0 || !selectedProjectId || !foldersConfigured}
-              >
-                {status === 'running' ? 'Executando...' : previewLoading ? 'Carregando...' : 'Iniciar Automação'}
-              </button>
+              <div className={styles.actionButtons}>
+                <button
+                  type="button"
+                  className={`${styles.button} ${styles.secondaryButton} ${previewLoading && isPreviewMode ? styles.loading : ''}`}
+                  onClick={handlePreviewClick}
+                  disabled={status === 'running' || previewLoading || !selectedProjectId || !foldersConfigured}
+                >
+                  {previewLoading && isPreviewMode ? 'Carregando...' : 'Prévia de Lançamentos'}
+                </button>
+                <button
+                  type="submit"
+                  className={`${styles.button} ${(status === 'running' || (previewLoading && !isPreviewMode)) ? styles.loading : ''}`}
+                  disabled={status === 'running' || previewLoading || !accessConfigured || projects.length === 0 || !selectedProjectId || !foldersConfigured}
+                >
+                  {status === 'running' ? 'Executando...' : (previewLoading && !isPreviewMode) ? 'Carregando...' : 'Iniciar Automação'}
+                </button>
+              </div>
             </form>
 
             {message === 'CREDENTIAL_ERROR' ? (
@@ -349,8 +375,10 @@ export default function LoginForm() {
       {previewItems !== null && (
         <ConfirmModal
           items={previewItems}
+          project={projects.find(p => p.id === selectedProjectId)}
           onConfirm={handleConfirm}
           onCancel={() => setPreviewItems(null)}
+          previewOnly={isPreviewMode}
         />
       )}
     </div>

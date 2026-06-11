@@ -9,7 +9,7 @@ import { APP_VERSION, APP_AUTHOR, APP_YEAR } from '@/lib/version';
 export default function LoginForm() {
   const [activeTab, setActiveTab] = useState<'triage' | 'automation'>('triage');
   const [foldersConfigured, setFoldersConfigured] = useState<boolean | null>(null);
-  const [projects, setProjects] = useState<{ id: string; name: string; international: boolean }[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string; international: boolean; inactiveDate?: string }[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [accessUser, setAccessUser] = useState('');
   const [accessHeadless, setAccessHeadless] = useState(true);
@@ -39,7 +39,7 @@ export default function LoginForm() {
         setFoldersConfigured(!!baseFolder);
         const list = data.projects ?? [];
         setProjects(list);
-        const activeProjects = list.filter(p => !p.inactiveDate);
+        const activeProjects = list.filter((p: any) => !p.inactiveDate);
         if (activeProjects.length > 0) {
           setSelectedProjectId(activeProjects[0].id);
         }

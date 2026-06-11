@@ -14,7 +14,7 @@ export default function TriageForm() {
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [baseFolder, setBaseFolder] = useState('');
-  const [projects, setProjects] = useState<{ id: string; name: string; international: boolean }[]>([]);
+  const [projects, setProjects] = useState<{ id: string; name: string; international: boolean; inactiveDate?: string }[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState('');
   const [isZoomed, setIsZoomed] = useState(false);
   const datePickerRef = useRef<HTMLInputElement>(null);

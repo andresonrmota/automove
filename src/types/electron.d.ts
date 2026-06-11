@@ -6,6 +6,8 @@ export interface ElectronAPI {
   
   listTriageFiles: () => Promise<{ files?: any[]; error?: string }>;
   processTriageFile: (payload: any) => Promise<{ success: boolean; newName?: string; error?: string }>;
+  openFilePath: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+  showItemInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   
   browseDirs: (path?: string) => Promise<any>;
   getHomeDir: () => Promise<string>;

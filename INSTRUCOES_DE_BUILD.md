@@ -73,3 +73,6 @@ Quando você for lançar uma nova versão da aplicação (por exemplo, atualizan
    - Abra o código do seu projeto Vercel (`developer-dashboard`).
    - Edite o arquivo `src/components/DownloadsPage.tsx` e troque a versão (ex: `v1.3.0` para `v1.4.0`) diretamente nas URLs dos botões de download.
    - Faça o commit e o Push desse repositório. O Vercel atualizará sua página de downloads automaticamente, que passará a baixar os arquivos da nova Release do GitHub!
+
+5. **Após instalação no macOS, execute o comando abaixo para remover a segurança de download:**
+   sudo xattr -cr /Applications/AutoMove.app

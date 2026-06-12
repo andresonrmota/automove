@@ -10,7 +10,13 @@ interface ProjectInfo {
   international: boolean;
 }
 
-export async function runMoveAutomation(project: ProjectInfo | null, onProgress?: (event: unknown) => void) {
+export async function runMoveAutomation(
+  project: ProjectInfo | null,
+  isContinuation: boolean,
+  ignoreExistingCheck: boolean,
+  targetPCId: string | null,
+  onProgress?: (event: unknown) => void
+) {
   const isInternational = project?.international ?? false;
   const log = (msg: string) => {
     console.log(msg);
@@ -21,8 +27,8 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
     if (onProgress) onProgress({ type: 'file_status', fileName, status, index, total });
   };
 
-  const { baseFolder } = getFolderConfig();
-  const access = getAccessConfig();
+  const { baseFolder } = await getFolderConfig();
+  const access = await getAccessConfig();
 
   if (!baseFolder) {
     throw new Error('Pasta Base não configurada nas definições.');
@@ -265,16 +271,107 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
     log('[AutoMove] ⏳ Aguardando 7 segundos para carregamento total...');
     await page.waitForTimeout(7000);
 
-    // 4. CLICAR EM NOVA PRESTAÇÃO DE CONTAS
-    log('[AutoMove] ➕ Clicando em Nova Prestação de Contas...');
-    const newReportButton = page.locator('text="Nova prestação de contas"').first();
+    // 4. VERIFICAÇÃO DE PRESTAÇÕES PENDENTES E SELEÇÃO DE FLUXO
+    log('[AutoMove] 📋 Verificando tabela de prestações pendentes...');
+    const rows = page.locator('table tbody tr, table tr:has(td)');
     
+    let hasTableRows = false;
     try {
-      await newReportButton.waitFor({ state: 'visible', timeout: 5000 });
-      await newReportButton.click();
+      await rows.first().waitFor({ state: 'visible', timeout: 5000 });
+      hasTableRows = true;
     } catch {
-      log('[AutoMove] ⚠️ Botão por texto não encontrado, tentando seletor alternativo...');
-      await page.locator('button:has-text("Nova prestação de contas")').click();
+      log('[AutoMove] ℹ️ Nenhuma prestação de contas pendente encontrada na listagem.');
+    }
+
+    const matchingReports: { id: string; project: string; value: string; rowIndex: number }[] = [];
+
+    if (hasTableRows) {
+      const rowCount = await rows.count();
+      log(`[AutoMove] 📋 Encontradas ${rowCount} prestações de contas na listagem.`);
+
+      for (let r = 0; r < rowCount; r++) {
+        const row = rows.nth(r);
+        const cells = row.locator('td');
+        const cellCount = await cells.count();
+
+        if (cellCount >= 5) {
+          const projectText = (await cells.nth(4).innerText()).trim();
+          const pcId = (await cells.nth(1).innerText()).trim();
+          const pcValue = cellCount >= 8 ? (await cells.nth(7).innerText()).trim() : '';
+
+          if (project?.name) {
+            const normTableProj = projectText.toLowerCase().replace(/\s+/g, ' ');
+            const normSelectedProj = project.name.toLowerCase().replace(/\s+/g, ' ');
+
+            if (normTableProj.includes(normSelectedProj) || normSelectedProj.includes(normTableProj)) {
+              matchingReports.push({ id: pcId, project: projectText, value: pcValue, rowIndex: r });
+            }
+          }
+        }
+      }
+    }
+
+    if (isContinuation) {
+      // --- MODO CONTINUIDADE ---
+      if (matchingReports.length === 0) {
+        throw new Error(`Não foi encontrada nenhuma prestação de contas pendente associada ao projeto "${project?.name || ''}" no portal MOVE. Verifique se o projeto selecionado é o correto.`);
+      }
+
+      let targetRowIndex = -1;
+      let matchedProjectName = '';
+      let matchedPCId = '';
+
+      if (targetPCId) {
+        // Lançar na prestação específica escolhida no modal
+        const found = matchingReports.find(r => r.id === targetPCId);
+        if (found) {
+          targetRowIndex = found.rowIndex;
+          matchedProjectName = found.project;
+          matchedPCId = found.id;
+        } else {
+          throw new Error(`A prestação ${targetPCId} selecionada não foi encontrada ou não pertence ao projeto "${project?.name}".`);
+        }
+      } else {
+        // Se ativado manualmente de início, escolhemos a mais recente (primeira da lista)
+        const found = matchingReports[0];
+        targetRowIndex = found.rowIndex;
+        matchedProjectName = found.project;
+        matchedPCId = found.id;
+      }
+
+      log(`[AutoMove] 🖱️ Abrindo prestação de contas pendente ${matchedPCId} para o projeto "${matchedProjectName}"...`);
+      const actionCell = rows.nth(targetRowIndex).locator('td').first();
+      const viewButton = actionCell.locator('img[alt="detalhes"], img[src*="search"]').first();
+      await viewButton.waitFor({ state: 'visible', timeout: 5000 });
+      await viewButton.click();
+
+      // Aguardar a tela de lançamentos carregar
+      log('[AutoMove] ⏳ Aguardando carregamento da tela de lançamentos...');
+      await page.waitForTimeout(5000);
+    } else {
+      // --- MODO CRIAÇÃO DO ZERO ---
+      if (!ignoreExistingCheck && matchingReports.length > 0) {
+        log(`[AutoMove] ⚠️ Encontradas ${matchingReports.length} prestações pendentes para este projeto.`);
+        return {
+          success: false,
+          error: 'PENDING_REPORT_FOUND',
+          details: matchingReports.map(r => ({ id: r.id, project: r.project, value: r.value }))
+        };
+      }
+
+      log('[AutoMove] ➕ Clicando em Nova Prestação de Contas...');
+      const newReportButton = page.locator('text="Nova prestação de contas"').first();
+      
+      try {
+        await newReportButton.waitFor({ state: 'visible', timeout: 8000 });
+        await newReportButton.click();
+      } catch {
+        log('[AutoMove] ⚠️ Botão por texto não encontrado, tentando seletor alternativo...');
+        await page.locator('button:has-text("Nova prestação de contas")').first().click();
+      }
+
+      log('[AutoMove] ⏳ Aguardando carregamento do formulário...');
+      await page.waitForTimeout(3000);
     }
 
     // --- 3. ORDENAÇÃO E PROCESSAMENTO ---
@@ -345,58 +442,64 @@ export async function runMoveAutomation(project: ProjectInfo | null, onProgress?
       try {
         // 5. PREENCHIMENTO DO FORMULÁRIO
         if (isFirstDocument) {
-          log(`[AutoMove] 🏢 Selecionando Projeto: "${project?.name ?? '(nenhum)'}"...`);
-          const projectContainer = page.locator('div:has(> label:has-text("Projeto"))').first();
-          const projectInput = projectContainer.locator('input').first();
-          await projectInput.waitFor({ state: 'visible', timeout: 10000 });
-          await projectInput.click();
-          await projectInput.fill('');
-          await page.waitForTimeout(500);
-
-          if (project?.name) {
-            // Digita o nome aos poucos para acionar o autocomplete
-            await projectInput.type(project.name, { delay: 50 });
+          if (isContinuation) {
+            log('[AutoMove] ⏩ Modo continuidade ativo: Pulando a seleção do Projeto.');
+            // Aguardar um momento para garantir que o formulário de inclusão carregue e campos estejam prontos
             await page.waitForTimeout(2000);
+          } else {
+            log(`[AutoMove] 🏢 Selecionando Projeto: "${project?.name ?? '(nenhum)'}"...`);
+            const projectContainer = page.locator('div:has(> label:has-text("Projeto"))').first();
+            const projectInput = projectContainer.locator('input').first();
+            await projectInput.waitFor({ state: 'visible', timeout: 10000 });
+            await projectInput.click();
+            await projectInput.fill('');
+            await page.waitForTimeout(500);
 
-            // Tenta encontrar a opção pelo texto — múltiplos seletores MUI
-            const optionSelectors = [
-              `li[role="option"]:has-text("${project.name}")`,
-              `[role="option"]:has-text("${project.name}")`,
-              `.MuiAutocomplete-option:has-text("${project.name}")`,
-              `li[role="option"]`,
-              `[role="option"]`,
-              `.MuiAutocomplete-option`,
-            ];
+            if (project?.name) {
+              // Digita o nome aos poucos para acionar o autocomplete
+              await projectInput.type(project.name, { delay: 50 });
+              await page.waitForTimeout(2000);
 
-            let clicked = false;
-            for (const sel of optionSelectors) {
-              try {
-                const opt = page.locator(sel).first();
-                await opt.waitFor({ state: 'visible', timeout: 4000 });
-                await opt.click();
-                clicked = true;
-                log(`[AutoMove] ✅ Opção selecionada via: ${sel}`);
-                break;
-              } catch {
-                // tenta o próximo seletor
+              // Tenta encontrar a opção pelo texto — múltiplos seletores MUI
+              const optionSelectors = [
+                `li[role="option"]:has-text("${project.name}")`,
+                `[role="option"]:has-text("${project.name}")`,
+                `.MuiAutocomplete-option:has-text("${project.name}")`,
+                `li[role="option"]`,
+                `[role="option"]`,
+                `.MuiAutocomplete-option`,
+              ];
+
+              let clicked = false;
+              for (const sel of optionSelectors) {
+                try {
+                  const opt = page.locator(sel).first();
+                  await opt.waitFor({ state: 'visible', timeout: 4000 });
+                  await opt.click();
+                  clicked = true;
+                  log(`[AutoMove] ✅ Opção selecionada via: ${sel}`);
+                  break;
+                } catch {
+                  // tenta o próximo seletor
+                }
               }
-            }
 
-            // Fallback: navegar com teclado se nenhum seletor funcionou
-            if (!clicked) {
-              log('[AutoMove] ⚠️ Dropdown não encontrado via seletor — usando teclado (ArrowDown + Enter)');
+              // Fallback: navegar com teclado se nenhum seletor funcionou
+              if (!clicked) {
+                log('[AutoMove] ⚠️ Dropdown não encontrado via seletor — usando teclado (ArrowDown + Enter)');
+                await page.keyboard.press('ArrowDown');
+                await page.waitForTimeout(600);
+                await page.keyboard.press('Enter');
+              }
+            } else {
               await page.keyboard.press('ArrowDown');
-              await page.waitForTimeout(600);
+              await page.waitForTimeout(800);
               await page.keyboard.press('Enter');
             }
-          } else {
-            await page.keyboard.press('ArrowDown');
-            await page.waitForTimeout(800);
-            await page.keyboard.press('Enter');
-          }
 
-          await page.waitForTimeout(1500);
-          log('[AutoMove] ✅ Projeto selecionado.');
+            await page.waitForTimeout(1500);
+            log('[AutoMove] ✅ Projeto selecionado.');
+          }
         } else {
           log('[AutoMove] ⏩ Pulando seleção de Projeto (já preenchido).');
         }

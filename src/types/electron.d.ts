@@ -19,7 +19,12 @@ export interface ElectronAPI {
   previewAutomation: () => Promise<{ items: any[]; error?: string }>;
   testTelegram: (payload: any) => Promise<{ success: boolean; error?: string }>;
   
-  runAutomation: (project: any) => Promise<any>;
+  runAutomation: (payload: {
+    project: any;
+    isContinuation: boolean;
+    ignoreExistingCheck?: boolean;
+    targetPCId?: string;
+  }) => Promise<any>;
   onAutomationLog: (callback: (data: any) => void) => () => void;
   exportSettings: (password: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;
   importSettings: (password: string) => Promise<{ success: boolean; canceled?: boolean; error?: string }>;

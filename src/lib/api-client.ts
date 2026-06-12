@@ -146,15 +146,20 @@ export async function testTelegram(payload: any) {
   });
 }
 
-export async function runAutomation(project: any) {
+export async function runAutomation(
+  project: any,
+  isContinuation: boolean = false,
+  ignoreExistingCheck: boolean = false,
+  targetPCId?: string
+) {
   if (typeof window !== 'undefined' && window.electronAPI) {
-    return window.electronAPI.runAutomation(project);
+    return window.electronAPI.runAutomation({ project, isContinuation, ignoreExistingCheck, targetPCId });
   }
   // No caso web legado, a automação retorna um Stream. No Electron, ela resolve via IPC.
   return fetch('/api/automation', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ project }),
+    body: JSON.stringify({ project, isContinuation, ignoreExistingCheck, targetPCId }),
   });
 }
 

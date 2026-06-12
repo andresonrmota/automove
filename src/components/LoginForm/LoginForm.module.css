@@ -707,3 +707,30 @@
   white-space: pre-wrap;
   line-height: 1.4;
 }
+
+.continuationContainer {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.checkboxLabel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  user-select: none;
+}
+
+.checkboxInput {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-color);
+  cursor: pointer;
+}
+
+.checkboxText {
+  line-height: 1.2;
+}

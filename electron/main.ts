@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { pathToFileURL } from 'url';
-import { exec } from 'child_process';
 import { chromium } from 'playwright';
 import crypto from 'crypto';
 
@@ -94,7 +93,7 @@ function registerProtocols() {
       const folderType = url.hostname; // 'base', 'triados', 'concluidos'
       const fileName = decodeURIComponent(url.pathname.slice(1));
 
-      const folders = getFolderConfig();
+      const folders = await getFolderConfig();
       let baseDir = folders.baseFolder;
 
       if (!baseDir) {
@@ -104,7 +103,11 @@ function registerProtocols() {
       if (folderType === 'triados') baseDir = path.join(baseDir, 'Triados');
       if (folderType === 'concluidos') baseDir = path.join(baseDir, 'Processados');
 
-      const filePath = path.join(baseDir, fileName);
+      const resolvedBase = path.resolve(baseDir);
+      const filePath = path.resolve(resolvedBase, fileName);
+      if (filePath !== resolvedBase && !filePath.startsWith(resolvedBase + path.sep)) {
+        return new Response('Acesso negado', { status: 403 });
+      }
       if (!fs.existsSync(filePath)) {
         return new Response('Arquivo não encontrado', { status: 404 });
       }
@@ -117,9 +120,27 @@ function registerProtocols() {
   });
 }
 
+// Remove perfis temporários do Playwright deixados por sessões anteriores (crashes etc.)
+async function cleanupOldTempProfiles() {
+  try {
+    const tmpDir = os.tmpdir();
+    const entries = await fs.promises.readdir(tmpDir, { withFileTypes: true });
+    await Promise.allSettled(
+      entries
+        .filter(e => e.isDirectory() && e.name.startsWith('automove-pw-'))
+        .map(e => fs.promises.rm(path.join(tmpDir, e.name), { recursive: true, force: true }))
+    );
+  } catch (err) {
+    console.error('Falha ao limpar perfis temporários antigos:', err);
+  }
+}
+
 app.whenReady().then(() => {
   registerProtocols();
   createWindow();
+
+  // Não-bloqueante: roda em paralelo com a inicialização da janela
+  cleanupOldTempProfiles();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -137,27 +158,27 @@ app.on('window-all-closed', () => {
 // --- IPC HANDLERS ---
 
 // 1. Configurações (Settings)
-ipcMain.handle('get-settings', () => {
-  const folders = getFolderConfig();
-  const projects = getProjects();
-  const access = getAccessConfig();
+ipcMain.handle('get-settings', async () => {
+  const folders = await getFolderConfig();
+  const projects = await getProjects();
+  const access = await getAccessConfig();
   return { folders, projects, access };
 });
 
-ipcMain.handle('save-settings', (event, data: { folders?: FolderConfig; projects?: Project[]; access?: AccessConfig }) => {
+ipcMain.handle('save-settings', async (event, data: { folders?: FolderConfig; projects?: Project[]; access?: AccessConfig }) => {
   try {
     if (data.folders) {
       // Garantir criação das pastas
       if (data.folders.baseFolder && !fs.existsSync(data.folders.baseFolder)) {
         fs.mkdirSync(data.folders.baseFolder, { recursive: true });
       }
-      saveFolderConfig(data.folders);
+      await saveFolderConfig(data.folders);
     }
     if (data.projects !== undefined) {
-      saveProjects(data.projects);
+      await saveProjects(data.projects);
     }
     if (data.access !== undefined) {
-      saveAccessConfig(data.access);
+      await saveAccessConfig(data.access);
     }
     return { success: true };
   } catch (err: any) {
@@ -180,9 +201,9 @@ ipcMain.handle('save-telegram-config', (event, config: TelegramConfig) => {
 });
 
 // 3. Triagem (Triage)
-ipcMain.handle('list-triage-files', () => {
+ipcMain.handle('list-triage-files', async () => {
   try {
-    const { baseFolder } = getFolderConfig();
+    const { baseFolder } = await getFolderConfig();
     if (!baseFolder || !fs.existsSync(baseFolder)) {
       return { files: [] };
     }
@@ -213,7 +234,7 @@ ipcMain.handle('list-triage-files', () => {
 
 ipcMain.handle('process-triage-file', async (event, data: { originalName: string; type: string; date: string; value: string; description?: string }) => {
   try {
-    const { baseFolder } = getFolderConfig();
+    const { baseFolder } = await getFolderConfig();
     if (!baseFolder) throw new Error('Pasta Base não configurada');
 
     const triados = path.join(baseFolder, 'Triados');
@@ -257,7 +278,7 @@ ipcMain.handle('process-triage-file', async (event, data: { originalName: string
 
 ipcMain.handle('open-file-path', async (event, filePath: string) => {
   try {
-    const { baseFolder } = getFolderConfig();
+    const { baseFolder } = await getFolderConfig();
     if (!baseFolder) throw new Error('Pasta base não configurada');
     const fullPath = path.join(baseFolder, 'Triados', filePath);
     if (!fs.existsSync(fullPath)) throw new Error('Arquivo não encontrado');
@@ -270,7 +291,7 @@ ipcMain.handle('open-file-path', async (event, filePath: string) => {
 
 ipcMain.handle('show-item-in-folder', async (event, filePath: string) => {
   try {
-    const { baseFolder } = getFolderConfig();
+    const { baseFolder } = await getFolderConfig();
     if (!baseFolder) throw new Error('Pasta base não configurada');
     const fullPath = path.join(baseFolder, 'Triados', filePath);
     if (!fs.existsSync(fullPath)) throw new Error('Arquivo não encontrado');
@@ -302,7 +323,7 @@ ipcMain.handle('open-directory-dialog', async () => {
   if (!fs.existsSync(processadosPath)) fs.mkdirSync(processadosPath, { recursive: true });
 
   // Salvar a pasta Base nas configurações
-  saveFolderConfig({ baseFolder: selectedPath });
+  await saveFolderConfig({ baseFolder: selectedPath });
 
   return { canceled: false, path: selectedPath };
 });
@@ -350,13 +371,10 @@ ipcMain.handle('open-folder', async (event, folderPath: string) => {
       fs.mkdirSync(normalized, { recursive: true });
     }
 
-    const platform = process.platform;
-    const cmd =
-      platform === 'darwin' ? `open "${normalized}"` :
-      platform === 'win32'  ? `explorer "${normalized}"` :
-                              `xdg-open "${normalized}"`;
-
-    exec(cmd);
+    const openError = await shell.openPath(normalized);
+    if (openError) {
+      return { error: openError };
+    }
     return { success: true };
   } catch (err: any) {
     return { error: err.message || 'Não foi possível abrir a pasta.' };
@@ -448,7 +466,7 @@ ipcMain.handle('validate-access', async (event, data: { user: string; pass: stri
 // 7. Preview da Automação (Arquivos Triados)
 ipcMain.handle('preview-automation', async () => {
   try {
-    const { baseFolder } = getFolderConfig();
+    const { baseFolder } = await getFolderConfig();
     if (!baseFolder) return { items: [] };
 
     const triados = path.join(baseFolder, 'Triados');
@@ -556,18 +574,30 @@ ipcMain.handle('test-telegram', async (event, data: { botToken: string; chatId: 
 });
 
 // 9. Rodar Automação (Playwright com logs por IPC)
-ipcMain.handle('run-automation', async (event, project: any) => {
+ipcMain.handle('run-automation', async (event, payload: {
+  project: any;
+  isContinuation: boolean;
+  ignoreExistingCheck?: boolean;
+  targetPCId?: string;
+}) => {
   try {
+    const { project, isContinuation, ignoreExistingCheck, targetPCId } = payload;
     const telegramConfig = getTelegramConfig();
     process.env.TELEGRAM_ENABLED = String(telegramConfig.enabled);
     process.env.TELEGRAM_BOT_TOKEN = telegramConfig.botToken;
     process.env.TELEGRAM_CHAT_ID = telegramConfig.chatId;
 
-    const result = await runMoveAutomation(project, (msg: any) => {
-      if (mainWindow) {
-        mainWindow.webContents.send('automation-log', msg);
+    const result = await runMoveAutomation(
+      project,
+      isContinuation,
+      ignoreExistingCheck ?? false,
+      targetPCId ?? null,
+      (msg: any) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('automation-log', msg);
+        }
       }
-    });
+    );
 
     return result;
   } catch (err: any) {
@@ -577,20 +607,23 @@ ipcMain.handle('run-automation', async (event, project: any) => {
 
 // 10. Exportar / Importar Configurações Seguras
 const ALGORITHM = 'aes-256-cbc';
-const deriveKey = (password: string) => crypto.scryptSync(password, 'salt-automove', 32);
+// Salt legado usado por backups exportados antes da v1.6 (não tinham campo 'salt')
+const LEGACY_SALT = 'salt-automove';
+const deriveKey = (password: string, salt: Buffer | string) => crypto.scryptSync(password, salt, 32);
 
 ipcMain.handle('export-settings', async (event, password: string) => {
   if (!mainWindow) return { success: false, error: 'Janela principal não encontrada' };
 
   try {
-    const folders = getFolderConfig();
-    const projects = getProjects();
-    const access = getAccessConfig();
+    const folders = await getFolderConfig();
+    const projects = await getProjects();
+    const access = await getAccessConfig();
     const telegram = getTelegramConfig();
 
     const dataPayload = JSON.stringify({ folders, projects, access, telegram });
 
-    const key = deriveKey(password);
+    const salt = crypto.randomBytes(16);
+    const key = deriveKey(password, salt);
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
 
@@ -598,6 +631,7 @@ ipcMain.handle('export-settings', async (event, password: string) => {
     encrypted += cipher.final('hex');
 
     const finalData = JSON.stringify({
+      salt: salt.toString('hex'),
       iv: iv.toString('hex'),
       data: encrypted
     });
@@ -647,7 +681,9 @@ ipcMain.handle('import-settings', async (event, password: string) => {
       return { success: false, error: 'Formato de arquivo inválido.' };
     }
 
-    const key = deriveKey(password);
+    // Backups antigos não têm o campo 'salt' — usa o salt legado para mantê-los importáveis
+    const salt = parsedFile.salt ? Buffer.from(parsedFile.salt, 'hex') : LEGACY_SALT;
+    const key = deriveKey(password, salt);
     const iv = Buffer.from(parsedFile.iv, 'hex');
     const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
 
@@ -661,9 +697,9 @@ ipcMain.handle('import-settings', async (event, password: string) => {
 
     const settingsData = JSON.parse(decrypted);
 
-    if (settingsData.folders) saveFolderConfig(settingsData.folders);
-    if (settingsData.projects) saveProjects(settingsData.projects);
-    if (settingsData.access) saveAccessConfig(settingsData.access);
+    if (settingsData.folders) await saveFolderConfig(settingsData.folders);
+    if (settingsData.projects) await saveProjects(settingsData.projects);
+    if (settingsData.access) await saveAccessConfig(settingsData.access);
     if (settingsData.telegram) saveTelegramConfig(settingsData.telegram);
 
     return { success: true };

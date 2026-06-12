@@ -3,6 +3,7 @@ import Link from 'next/link';
 import styles from './LoginForm.module.css';
 import TriageForm from '../TriageForm/TriageForm';
 import ConfirmModal from '../ConfirmModal/ConfirmModal';
+import PendingReportsModal from '../PendingReportsModal/PendingReportsModal';
 import { getSettings, previewAutomation, runAutomation, onAutomationLog } from '@/lib/api-client';
 import { APP_VERSION, APP_AUTHOR, APP_YEAR } from '@/lib/version';
 
@@ -23,6 +24,9 @@ export default function LoginForm() {
   const [previewItems, setPreviewItems] = useState<any[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [isContinuation, setIsContinuation] = useState(false);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [pendingReports, setPendingReports] = useState<{ id: string; project: string; value: string }[]>([]);
   
   const terminalEndRef = useRef<HTMLDivElement>(null);
 
@@ -83,8 +87,11 @@ export default function LoginForm() {
     await loadPreview();
   };
 
-  const handleConfirm = async () => {
-    setPreviewItems(null);
+  const startAutomationWithParams = async (
+    continuation: boolean,
+    ignoreCheck: boolean,
+    pcId?: string
+  ) => {
     setStatus('running');
     setMessage('Iniciando conexão com o servidor...');
     setReport(null);
@@ -121,12 +128,17 @@ export default function LoginForm() {
 
     try {
       const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null;
-      const res = await runAutomation(selectedProject);
-      
+      const res = await runAutomation(selectedProject, continuation, ignoreCheck, pcId);
+
       if (res.success) {
         setStatus('success');
         setMessage('Automação concluída com sucesso!');
         if (res.report) setReport(res.report);
+      } else if (res.error === 'PENDING_REPORT_FOUND') {
+        setStatus('idle');
+        setMessage('');
+        setPendingReports(res.details || []);
+        setShowPendingModal(true);
       } else {
         setStatus('error');
         const isCredentialError = res.error?.includes('INVALID_CREDENTIALS') || res.error?.includes('Usuário ou senha inválidos');
@@ -146,6 +158,28 @@ export default function LoginForm() {
     } finally {
       unsubscribe();
     }
+  };
+
+  const handleSelectContinuation = async (pcId: string) => {
+    setShowPendingModal(false);
+    setIsContinuation(true);
+    await startAutomationWithParams(true, false, pcId);
+  };
+
+  const handleSelectNew = async () => {
+    setShowPendingModal(false);
+    await startAutomationWithParams(false, true);
+  };
+
+  const handleConfirm = async () => {
+    if (!isContinuation) {
+      const confirmInitial = window.confirm("Deseja realmente iniciar uma nova prestação de contas do zero no portal MOVE?");
+      if (!confirmInitial) {
+        return;
+      }
+    }
+    setPreviewItems(null);
+    await startAutomationWithParams(isContinuation, false);
   };
 
   return (
@@ -220,22 +254,38 @@ export default function LoginForm() {
                   Nenhum projeto cadastrado. <Link href="/settings" className={styles.configWarningLink}>Adicione em Configurações →</Link>
                 </div>
               ) : (
-                <div className={styles.projectSelector}>
-                  <label className={styles.projectLabel}>Projeto</label>
-                  <select
-                    className={styles.projectSelect}
-                    value={selectedProjectId}
-                    onChange={e => setSelectedProjectId(e.target.value)}
-                    disabled={status === 'running'}
-                  >
-                    <option value="" disabled>Selecione o projeto...</option>
-                    {projects.filter(p => !p.inactiveDate).map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}{p.international ? ' 🌐' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <>
+                  <div className={styles.projectSelector}>
+                    <label className={styles.projectLabel}>Projeto</label>
+                    <select
+                      className={styles.projectSelect}
+                      value={selectedProjectId}
+                      onChange={e => setSelectedProjectId(e.target.value)}
+                      disabled={status === 'running'}
+                    >
+                      <option value="" disabled>Selecione o projeto...</option>
+                      {projects.filter(p => !p.inactiveDate).map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}{p.international ? ' 🌐' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className={styles.continuationContainer}>
+                    <label className={styles.checkboxLabel}>
+                      <input
+                        type="checkbox"
+                        className={styles.checkboxInput}
+                        checked={isContinuation}
+                        onChange={e => setIsContinuation(e.target.checked)}
+                        disabled={status === 'running'}
+                      />
+                      <span className={styles.checkboxText}>
+                        Continuidade de lançamento anterior (não criar nova prestação)
+                      </span>
+                    </label>
+                  </div>
+                </>
               )}
 
               <div className={styles.actionButtons}>
@@ -379,6 +429,15 @@ export default function LoginForm() {
           onConfirm={handleConfirm}
           onCancel={() => setPreviewItems(null)}
           previewOnly={isPreviewMode}
+        />
+      )}
+
+      {showPendingModal && (
+        <PendingReportsModal
+          reports={pendingReports}
+          onSelectContinuation={handleSelectContinuation}
+          onSelectNew={handleSelectNew}
+          onCancel={() => setShowPendingModal(false)}
         />
       )}
     </div>

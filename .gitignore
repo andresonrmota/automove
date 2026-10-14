@@ -69,3 +69,12 @@ Thumbs.db
 
 # Exceção explícita para garantir o versionamento do arquivo de instruções
 !INSTRUCOES_DE_BUILD.md
+
+# baseline (sync antes da troca de Mac)
+node_modules/
+.env
+.env.*
+!.env.example
+__pycache__/
+.venv/
+venv/

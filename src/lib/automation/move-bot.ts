@@ -2,12 +2,31 @@ import { chromium } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import { getFolderConfig, getAccessConfig } from '@/lib/config';
-import { sendTelegramNotification } from './telegram';
+import { sendTelegramNotification, sendTelegramScreenshots } from './telegram';
+import { captureFinalScreenshots } from './screenshots';
 
 interface ProjectInfo {
   id: string;
   name: string;
   international: boolean;
+}
+
+/**
+ * Repete uma checagem até ela retornar true ou o tempo esgotar.
+ * Erros durante a checagem (ex.: tabela re-renderizando) são ignorados e a
+ * checagem é refeita no próximo intervalo.
+ */
+async function waitForCondition(check: () => Promise<boolean>, timeoutMs: number, intervalMs = 500): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      if (await check()) return true;
+    } catch {
+      // tenta de novo no próximo ciclo
+    }
+    await new Promise(resolve => setTimeout(resolve, intervalMs));
+  }
+  return false;
 }
 
 export async function runMoveAutomation(
@@ -563,6 +582,12 @@ export async function runMoveAutomation(
         await fileInput.setInputFiles(filePath);
         await page.waitForTimeout(2000); 
 
+        // ESTADO DA TABELA ANTES DE INCLUIR (para confirmar depois que uma linha NOVA apareceu)
+        const tableRows = page.locator('table tbody tr, table tr:has(td)');
+        const valueCells = page.locator('table td', { hasText: expenseValueStr });
+        const rowsBefore = await tableRows.count();
+        const valueMatchesBefore = await valueCells.count();
+
         // INCLUIR
         const includeButton = page.locator('button:has-text("Incluir despesa"), button:has-text("Incluir")').first();
         await includeButton.click();
@@ -578,15 +603,21 @@ export async function runMoveAutomation(
           log('[AutoMove] ⚠️ Pop-up "Ok" não apareceu ou já fechou.');
         }
 
-        // VERIFICAÇÃO NA TABELA
+        // VERIFICAÇÃO NA TABELA (obrigatória: sem confirmação a nota é tratada como NÃO lançada)
         log('[AutoMove] ⏳ Confirmando na tabela...');
-        try {
-          const tableRow = page.locator(`table >> text="${expenseValueStr}"`).first();
-          await tableRow.waitFor({ state: 'visible', timeout: 8000 });
-          log('[AutoMove] ✅ Lançamento confirmado!');
-        } catch {
-          await page.waitForTimeout(4000);
+        const confirmed = await waitForCondition(async () => {
+          const rowsNow = await tableRows.count();
+          const valueMatchesNow = await valueCells.count();
+          return valueMatchesNow > valueMatchesBefore || (rowsNow > rowsBefore && valueMatchesNow > 0);
+        }, 20000);
+
+        if (!confirmed) {
+          throw new Error(
+            `Lançamento NÃO confirmado: nenhuma linha nova com o valor R$ ${expenseValueStr} apareceu na tabela do Move em 20s. ` +
+            'O arquivo permaneceu em Triados para nova tentativa.'
+          );
         }
+        log('[AutoMove] ✅ Lançamento confirmado na tabela!');
 
         // MOVER PARA PROCESSADOS
         const destinationPath = path.join(processedDir, fileName);
@@ -606,8 +637,15 @@ export async function runMoveAutomation(
 
       } catch (fileError: unknown) {
         const errorMessage = fileError instanceof Error ? fileError.message : String(fileError);
-        console.error(`[AutoMove] ❌ Falha no arquivo ${fileName}:`, errorMessage);
-        await page.screenshot({ path: `error_${fileName}.png` });
+        log(`[AutoMove] ❌ Falha no arquivo ${fileName}: ${errorMessage}`);
+        emitFileStatus(fileName, 'error', i, files.length);
+        try {
+          const errorsDir = path.join(baseFolder, 'Erros');
+          if (!fs.existsSync(errorsDir)) fs.mkdirSync(errorsDir, { recursive: true });
+          await page.screenshot({ path: path.join(errorsDir, `erro_${Date.now()}_${fileName}.png`) });
+        } catch (screenshotErr) {
+          console.error('[AutoMove] Não foi possível salvar o print do erro:', screenshotErr);
+        }
         results.push({
           file: fileName,
           status: 'error',
@@ -615,6 +653,9 @@ export async function runMoveAutomation(
         });
       }
     }
+
+    // Prints da tela final para confirmação visual no Telegram
+    const finalScreenshots = await captureFinalScreenshots(page, log);
 
     if (!access.headless) {
       await page.waitForTimeout(5000);
@@ -631,6 +672,19 @@ export async function runMoveAutomation(
       log('[AutoMove] 📱 Enviando notificação para o Telegram...');
       await sendTelegramNotification(finalReport, project?.name);
       log('[AutoMove] 📬 Notificação processada com sucesso.');
+
+      if (finalScreenshots.length > 0) {
+        try {
+          log(`[AutoMove] 📸 Enviando ${finalScreenshots.length} print(s) de confirmação para o Telegram...`);
+          await sendTelegramScreenshots(finalScreenshots, project?.name);
+          log('[AutoMove] 🖼️ Prints de confirmação enviados.');
+        } catch (screenshotErr) {
+          log('[AutoMove] ⚠️ Resumo enviado, mas não foi possível enviar os prints de confirmação pelo Telegram.');
+          console.error('[AutoMove] Erro ao enviar prints:', screenshotErr);
+        }
+      } else {
+        log('[AutoMove] ⚠️ Nenhum print da tela final pôde ser capturado.');
+      }
     } catch (telegramErr) {
       log('[AutoMove] ⚠️ Não foi possível enviar notificação pelo Telegram (Falha de rede/configuração).');
       console.error('[AutoMove] Erro no telegram:', telegramErr);

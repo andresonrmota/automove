@@ -1,9 +1,12 @@
 import { chromium } from 'playwright';
+import type { Page } from 'playwright';
 import fs from 'fs';
 import path from 'path';
 import { getFolderConfig, getAccessConfig } from '@/lib/config';
-import { sendTelegramNotification, sendTelegramScreenshots } from './telegram';
+import { APP_VERSION } from '@/lib/version';
+import { sendTelegramLog, sendTelegramNotification, sendTelegramScreenshots } from './telegram';
 import { captureFinalScreenshots } from './screenshots';
+import { attachPageDiagnostics, createRunLog, logFormState } from './run-log';
 
 interface ProjectInfo {
   id: string;
@@ -29,6 +32,45 @@ async function waitForCondition(check: () => Promise<boolean>, timeoutMs: number
   return false;
 }
 
+/** Falha que afetaria as notas seguintes: interrompe o lote em vez de insistir. */
+class SuspendRunError extends Error {}
+
+/** O texto do campo de item confirma a seleção; "No options" indica lista sem resultado no portal. */
+export function isItemSelected(fieldText: string, typedItem: string): boolean {
+  const text = fieldText.toLowerCase();
+  return text.includes(typedItem.toLowerCase()) && !text.includes('no options');
+}
+
+/**
+ * Escolhe o item clicando na lista aberta, sem digitar: a busca por texto do
+ * portal retorna erro 500. A lista carrega 10 itens por vez, então rola até achar.
+ */
+export async function pickListOption(page: Page, label: string): Promise<boolean> {
+  const options = page.locator('[class*="-option"]');
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const target = options.filter({ hasText: new RegExp(`^\\s*${escaped}\\s*$`, 'i') }).first();
+
+  try {
+    await options.first().waitFor({ state: 'visible', timeout: 15000 });
+  } catch {
+    return false;
+  }
+
+  let seen = 0;
+  for (let stalled = 0; stalled < 3;) {
+    if (await target.count() > 0) {
+      await target.click();
+      return true;
+    }
+    const count = await options.count();
+    stalled = count > seen ? 0 : stalled + 1;
+    seen = count;
+    await options.last().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(1000);
+  }
+  return false;
+}
+
 export async function runMoveAutomation(
   project: ProjectInfo | null,
   isContinuation: boolean,
@@ -37,8 +79,10 @@ export async function runMoveAutomation(
   onProgress?: (event: unknown) => void
 ) {
   const isInternational = project?.international ?? false;
+  const runLog = createRunLog();
   const log = (msg: string) => {
     console.log(msg);
+    runLog.write(msg);
     if (onProgress) onProgress({ type: 'log', message: msg });
   };
 
@@ -48,6 +92,8 @@ export async function runMoveAutomation(
 
   const { baseFolder } = await getFolderConfig();
   const access = await getAccessConfig();
+
+  runLog.write(`AutoMove ${APP_VERSION} | ${process.platform} ${process.arch} | headless=${access.headless} | projeto=${project?.name ?? '(nenhum)'} | continuidade=${isContinuation} | prestação=${targetPCId ?? '-'}`);
 
   if (!baseFolder) {
     throw new Error('Pasta Base não configurada nas definições.');
@@ -213,6 +259,8 @@ export async function runMoveAutomation(
   const browser = context;
 
   const page = await context.newPage();
+  attachPageDiagnostics(page, runLog.write);
+  let hadErrors = false;
 
   try {
     try {
@@ -413,6 +461,8 @@ export async function runMoveAutomation(
     const results: any[] = [];
     let totalValue = 0;
     let processedCount = 0;
+    let suspendReason = '';
+    let suspendedFiles: string[] = [];
 
     const metadataPath = path.join(uploadsDir, 'metadata.json');
     let metadataStore: Record<string, string> = {};
@@ -539,17 +589,15 @@ export async function runMoveAutomation(
           }
         }
 
-        log('[AutoMove] ⌨️ Digitando item...');
+        log('[AutoMove] 📋 Abrindo lista de itens...');
         await itemInput.click();
-        await itemInput.fill('');
-        
-        let currentType = expenseType.substring(0, 6);
-        await page.keyboard.type(currentType, { delay: 100 });
-        
-        // Espera a lista carregar e aperta Enter
-        await page.waitForTimeout(4000);
-        await page.keyboard.press('Enter');
+        const picked = await pickListOption(page, expenseType);
         await page.waitForTimeout(1000);
+        await logFormState(page, runLog.write, 'depois de escolher o item');
+
+        if (!picked || !isItemSelected(await itemContainer.innerText(), expenseType)) {
+          throw new SuspendRunError(`O item de despesa "${expenseType}" não pôde ser selecionado no Move: a opção não foi encontrada na lista do portal.`);
+        }
 
         // DATA DA DESPESA
         log(`[AutoMove] 📅 Preenchendo data: ${expenseDate}`);
@@ -587,6 +635,7 @@ export async function runMoveAutomation(
         const valueCells = page.locator('table td', { hasText: expenseValueStr });
         const rowsBefore = await tableRows.count();
         const valueMatchesBefore = await valueCells.count();
+        await logFormState(page, runLog.write, 'antes de Incluir');
 
         // INCLUIR
         const includeButton = page.locator('button:has-text("Incluir despesa"), button:has-text("Incluir")').first();
@@ -637,7 +686,9 @@ export async function runMoveAutomation(
 
       } catch (fileError: unknown) {
         const errorMessage = fileError instanceof Error ? fileError.message : String(fileError);
+        hadErrors = true;
         log(`[AutoMove] ❌ Falha no arquivo ${fileName}: ${errorMessage}`);
+        await logFormState(page, runLog.write, 'na falha');
         emitFileStatus(fileName, 'error', i, files.length);
         try {
           const errorsDir = path.join(baseFolder, 'Erros');
@@ -648,9 +699,20 @@ export async function runMoveAutomation(
         }
         results.push({
           file: fileName,
+          type: expenseType,
+          value: expenseValueStr,
+          date: expenseDate,
           status: 'error',
           message: errorMessage
         });
+
+        if (fileError instanceof SuspendRunError) {
+          suspendReason = errorMessage;
+          suspendedFiles = files.slice(i + 1);
+          log(`[AutoMove] ⛔ Lançamentos suspensos. ${suspendedFiles.length} arquivo(s) não tentado(s) permanecem em Triados.`);
+          suspendedFiles.forEach((f, offset) => emitFileStatus(f, 'error', i + 1 + offset, files.length));
+          break;
+        }
       }
     }
 
@@ -664,7 +726,9 @@ export async function runMoveAutomation(
     const finalReport = {
       items: results,
       total: totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-      count: processedCount
+      count: processedCount,
+      suspendReason,
+      suspendedFiles
     };
 
     // Disparar notificação do Telegram
@@ -685,9 +749,23 @@ export async function runMoveAutomation(
       } else {
         log('[AutoMove] ⚠️ Nenhum print da tela final pôde ser capturado.');
       }
+
+      if (results.some(r => r.status === 'error')) {
+        await sendTelegramLog(runLog.file, project?.name);
+        log('[AutoMove] 📝 Log da execução enviado pelo Telegram.');
+      }
     } catch (telegramErr) {
       log('[AutoMove] ⚠️ Não foi possível enviar notificação pelo Telegram (Falha de rede/configuração).');
       console.error('[AutoMove] Erro no telegram:', telegramErr);
+    }
+
+    if (suspendReason) {
+      return {
+        success: false,
+        error: `Lançamentos suspensos. ${suspendReason}`,
+        details: suspendedFiles.map(f => `Não tentado, permanece em Triados: ${f}`),
+        report: finalReport
+      };
     }
 
     return { 
@@ -698,9 +776,22 @@ export async function runMoveAutomation(
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    hadErrors = true;
     console.error('[AutoMove] ❌ Erro crítico na automação:', errorMessage);
+    runLog.write(`[erro crítico] ${error instanceof Error ? error.stack : errorMessage}`);
+    await logFormState(page, runLog.write, 'erro crítico');
+    await sendTelegramLog(runLog.file, project?.name).catch(() => {});
     throw error;
   } finally {
+    if (hadErrors) {
+      try {
+        const errorsDir = path.join(baseFolder, 'Erros');
+        fs.mkdirSync(errorsDir, { recursive: true });
+        fs.copyFileSync(runLog.file, path.join(errorsDir, path.basename(runLog.file)));
+      } catch (copyErr) {
+        console.error('[AutoMove] Não foi possível copiar o log para Erros:', copyErr);
+      }
+    }
     if (access.headless) {
       await browser.close();
     }

@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: '/settings/acesso',   label: 'Acesso ao MOVE',     icon: '🔐' },
   { href: '/settings/telegram', label: 'Telegram',           icon: '🤖' },
   { href: '/settings/backup',   label: 'Backup',             icon: '💾' },
+  { href: '/settings/logs',     label: 'Logs',               icon: '📝' },
 ];
 
 export default function SettingsNav() {

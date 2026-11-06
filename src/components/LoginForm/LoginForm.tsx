@@ -141,6 +141,7 @@ export default function LoginForm() {
         setShowPendingModal(true);
       } else {
         setStatus('error');
+        if (res.report) setReport(res.report);
         const isCredentialError = res.error?.includes('INVALID_CREDENTIALS') || res.error?.includes('Usuário ou senha inválidos');
         const isTimeoutError = res.error?.includes('LOGIN_TIMEOUT') || res.error?.includes('demorou demais');
         if (isCredentialError) {
@@ -373,7 +374,11 @@ export default function LoginForm() {
                     <li key={i}>{err}</li>
                   ))}
                 </ul>
-                <p className={styles.diagnosticFooter}>Corrija os nomes dos arquivos e tente novamente.</p>
+                <p className={styles.diagnosticFooter}>
+                  {report?.suspendReason
+                    ? 'Automação suspensa. Resolva o problema no Move antes de tentar novamente.'
+                    : 'Corrija os nomes dos arquivos e tente novamente.'}
+                </p>
               </div>
             )}
 

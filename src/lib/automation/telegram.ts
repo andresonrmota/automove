@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -18,7 +21,8 @@ export async function sendTelegramNotification(report: any, projectName?: string
   }
 
   const projectInfo = projectName ? `[${projectName}]\n` : '';
-  const header = `🤖 <b>AutoMove: Processamento Concluído!</b>\n${escapeHtml(projectInfo)}\n<b>Resumo:</b>\nTotal processado: ${report.count} arquivo(s)\nTotal valor: R$ ${escapeHtml(String(report.total))}\n\n<b>Lançamentos:</b>\n`;
+  const title = report.suspendReason ? '⛔ <b>AutoMove: Lançamentos SUSPENSOS!</b>' : '🤖 <b>AutoMove: Processamento Concluído!</b>';
+  const header = `${title}\n${escapeHtml(projectInfo)}\n<b>Resumo:</b>\nTotal processado: ${report.count} arquivo(s)\nTotal valor: R$ ${escapeHtml(String(report.total))}\n\n<b>Lançamentos:</b>\n`;
 
   let list = '';
   
@@ -47,7 +51,10 @@ export async function sendTelegramNotification(report: any, projectName?: string
     list += `${statusIcon} [${escapeHtml(item.type || 'Desconhecido')}] ${escapeHtml(item.date || '-')} - R$ ${escapeHtml(item.value || '0,00')}${errorMsg}\n`;
   }
 
-  const footer = `\n<b>Verifique as informação lançadas no Move, VALIDANDO-AS! Se estiverem ok, basta agora enviar para a aprovação.</b>`;
+  const suspended: string[] = report.suspendedFiles || [];
+  const footer = report.suspendReason
+    ? `\n⛔ <b>Motivo:</b> ${escapeHtml(report.suspendReason)}\n\n<b>Não tentados (${suspended.length}), permanecem em Triados:</b>\n${suspended.map(f => `⏸️ ${escapeHtml(f)}`).join('\n')}\n\n<b>Não envie a prestação para aprovação antes de lançar as notas restantes.</b>`
+    : `\n<b>Verifique as informação lançadas no Move, VALIDANDO-AS! Se estiverem ok, basta agora enviar para a aprovação.</b>`;
   const message = header + list + footer;
 
   try {
@@ -135,6 +142,21 @@ export async function sendTelegramScreenshots(screenshots: Buffer[], projectName
 
     await postTelegramForm(token, 'sendMediaGroup', form);
   }
+}
+
+/** Envia o arquivo de log da execução, para diagnóstico de falhas. */
+export async function sendTelegramLog(filePath: string, projectName?: string) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (process.env.TELEGRAM_ENABLED !== 'true' || !token || !chatId) {
+    throw new Error('Telegram indisponível para envio do log.');
+  }
+
+  const form = new FormData();
+  form.append('chat_id', chatId);
+  form.append('caption', `📝 Log da execução com falha${projectName ? ` [${projectName}]` : ''}`);
+  form.append('document', new Blob([fs.readFileSync(filePath)], { type: 'text/plain' }), path.basename(filePath));
+  await postTelegramForm(token, 'sendDocument', form);
 }
 
 async function postTelegramForm(token: string, method: string, form: FormData) {

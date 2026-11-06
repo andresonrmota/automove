@@ -29,6 +29,37 @@ npm run dist
 
 Os arquivos compilados (incluindo o `.exe`) poderão ser encontrados no diretório `dist/`.
 
+### Procedimento completo no Windows (pessoa ou agente de IA)
+
+O `.exe` deve ser gerado em uma máquina Windows. Em Mac com chip Apple, o `electron-builder` depende de um componente Intel (Wine) e falha sem o Rosetta.
+
+Esta é uma tarefa apenas de build: não altere código, não faça commit ou push, não execute a automação do app e não instale o resultado.
+
+1. **Pré-requisitos**
+   - Tenha Git e Node.js 20 ou 22 LTS. No Node 24, o instalador do Electron pode parar a extração sem mostrar erro.
+   - Use a pasta do projeto já existente na máquina ou clone `https://github.com/andresonrmota/automove.git`.
+   - Se houver alterações locais não commitadas, pare e avise. Nunca as descarte.
+2. **Código correto**
+   - Rode `git fetch origin`.
+   - Faça checkout da branch ou tag indicada no pedido. Sem indicação, use `main`.
+   - Confirme que `package.json` e `src/lib/version.ts` mostram a versão pedida. Se divergirem, pare e avise.
+3. **Dependências**
+   - Rode `npm ci`.
+   - Rode `node -e "console.log(require('electron'))"`. O resultado deve ser o caminho de um `electron.exe`.
+   - Se falhar, rode `node node_modules/electron/install.js` e valide de novo.
+4. **Build**
+   - Rode `npm run dist`.
+   - Se aparecer "Cannot create symbolic link", pare e peça para ativar o Modo de Desenvolvedor do Windows ou abrir o terminal como administrador.
+   - Não altere a configuração do projeto para contornar erros.
+5. **Validação**
+   - Confirme que `dist/AutoMove Setup <versão>.exe` existe.
+   - Calcule o SHA-256 com `certutil -hashfile "dist\AutoMove Setup <versão>.exe" SHA256`.
+6. **Relatório final**
+   - Informe caminho, tamanho e SHA-256 do `.exe`, branch e commit usados, versões do Node e do npm, e avisos relevantes.
+   - Em caso de falha, mostre o erro exato e o passo em que parou.
+
+O instalador sai sem assinatura digital. O Windows pode mostrar o aviso do SmartScreen, que se resolve em "Mais informações" e "Executar assim mesmo".
+
 ---
 
 ## 3. Gerando a Imagem para macOS (.dmg)
@@ -62,7 +93,8 @@ Quando você for lançar uma nova versão da aplicação (por exemplo, atualizan
    - No `package.json`, altere o `"version": "1.3.0"` para a nova versão.
    - Em `src/lib/version.ts`, atualize a constante `APP_VERSION`.
 2. **Gere os instaladores:**
-   - Rode `npm run dist` para gerar os arquivos atualizados (e `npm run dist:mac` caso esteja num ambiente macOS).
+   - No macOS, rode `npm run dist:mac`.
+   - No Windows, siga o procedimento completo da seção 2.
 3. **Distribuição via GitHub Releases:**
    - **Nunca exclua as versões anteriores.** O GitHub serve justamente como um acervo histórico do seu projeto.
    - Acesse o repositório no GitHub, vá na barra lateral em **"Releases"** e clique em **"Draft a new release"**.

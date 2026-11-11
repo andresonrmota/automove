@@ -20,6 +20,7 @@ import {
 } from '../src/lib/config';
 
 import { getTelegramConfig, saveTelegramConfig, TelegramConfig } from '../src/lib/env-config';
+import { TELEGRAM_BOT_TOKEN } from '../src/lib/telegram-bot';
 import { runMoveAutomation } from '../src/lib/automation/move-bot';
 
 // Registrar protocolos customizados antes da app estar pronta
@@ -538,15 +539,13 @@ ipcMain.handle('preview-automation', async () => {
 });
 
 // 8. Testar Integração do Telegram
-ipcMain.handle('test-telegram', async (event, data: { botToken: string; chatId: string }) => {
+ipcMain.handle('test-telegram', async (event, data: { chatId: string }) => {
   try {
-    const { botToken, chatId } = data;
-    const config = getTelegramConfig();
-    const finalToken = botToken || config.botToken;
-    const finalChatId = chatId || config.chatId;
+    const finalToken = TELEGRAM_BOT_TOKEN;
+    const finalChatId = data?.chatId || getTelegramConfig().chatId;
 
-    if (!finalToken || !finalChatId) {
-      return { success: false, error: 'Token ou Chat ID não informados.' };
+    if (!finalChatId) {
+      return { success: false, error: 'Chat ID não informado.' };
     }
 
     const message = `🤖 *AutoMove Teste*\n\nSua integração com o Telegram está funcionando perfeitamente! ✅`;
@@ -584,7 +583,6 @@ ipcMain.handle('run-automation', async (event, payload: {
     const { project, isContinuation, ignoreExistingCheck, targetPCId } = payload;
     const telegramConfig = getTelegramConfig();
     process.env.TELEGRAM_ENABLED = String(telegramConfig.enabled);
-    process.env.TELEGRAM_BOT_TOKEN = telegramConfig.botToken;
     process.env.TELEGRAM_CHAT_ID = telegramConfig.chatId;
 
     const result = await runMoveAutomation(

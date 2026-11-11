@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { TELEGRAM_BOT_TOKEN } from '@/lib/telegram-bot';
 
 function escapeHtml(text: string): string {
   return text
@@ -9,7 +10,7 @@ function escapeHtml(text: string): string {
 }
 
 export async function sendTelegramNotification(report: any, projectName?: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const token = TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   const enabled = process.env.TELEGRAM_ENABLED === 'true';
 
@@ -86,7 +87,7 @@ const TELEGRAM_MEDIA_GROUP_LIMIT = 10;
  * de cada lote carrega a legenda com o índice do lote.
  */
 export async function sendTelegramScreenshots(screenshots: Buffer[], projectName?: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const token = TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   const enabled = process.env.TELEGRAM_ENABLED === 'true';
 
@@ -146,7 +147,7 @@ export async function sendTelegramScreenshots(screenshots: Buffer[], projectName
 
 /** Envia o arquivo de log da execução, para diagnóstico de falhas. */
 export async function sendTelegramLog(filePath: string, projectName?: string) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const token = TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (process.env.TELEGRAM_ENABLED !== 'true' || !token || !chatId) {
     throw new Error('Telegram indisponível para envio do log.');

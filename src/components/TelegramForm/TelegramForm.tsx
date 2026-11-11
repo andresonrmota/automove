@@ -2,16 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { getTelegramConfig, saveTelegramConfig, testTelegram } from '@/lib/api-client';
+import { TELEGRAM_BOT_USERNAME } from '@/lib/telegram-bot';
 import styles from './TelegramForm.module.css';
 
 interface TelegramConfig {
   enabled: boolean;
-  botToken: string;
   chatId: string;
 }
 
 export default function TelegramForm() {
-  const [form, setForm] = useState<TelegramConfig>({ enabled: false, botToken: '', chatId: '' });
+  const [form, setForm] = useState<TelegramConfig>({ enabled: false, chatId: '' });
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
@@ -20,7 +20,7 @@ export default function TelegramForm() {
   useEffect(() => {
     getTelegramConfig()
       .then(data => {
-        if (data) setForm(data);
+        if (data) setForm({ enabled: !!data.enabled, chatId: data.chatId || '' });
       })
       .catch(() => {});
   }, []);
@@ -29,15 +29,15 @@ export default function TelegramForm() {
     setForm(prev => ({ ...prev, [field]: value }));
 
   const handleTest = async () => {
-    if (!form.botToken || !form.chatId) {
-      setFeedback({ type: 'error', message: 'Preencha Token e Chat ID para testar.' });
+    if (!form.chatId) {
+      setFeedback({ type: 'error', message: 'Informe o Chat ID para testar.' });
       return;
     }
 
     setTesting(true);
     setFeedback(null);
     try {
-      const data = await testTelegram({ botToken: form.botToken, chatId: form.chatId });
+      const data = await testTelegram({ chatId: form.chatId });
       if (data.error) throw new Error(data.error);
       setFeedback({ type: 'success', message: 'Mensagem de teste enviada com sucesso! Verifique seu Telegram.' });
     } catch (e: unknown) {
@@ -48,8 +48,8 @@ export default function TelegramForm() {
   };
 
   const handleSave = async () => {
-    if (form.enabled && (!form.botToken || !form.chatId)) {
-      setFeedback({ type: 'error', message: 'Preencha Token e Chat ID para habilitar a notificação.' });
+    if (form.enabled && !form.chatId) {
+      setFeedback({ type: 'error', message: 'Informe o Chat ID para habilitar a notificação.' });
       return;
     }
 
@@ -70,30 +70,35 @@ export default function TelegramForm() {
     <div className={styles.card}>
       <div className={styles.headerRow}>
         <h2 className={styles.sectionTitle}>Notificações do Telegram</h2>
-        <button 
-          type="button" 
-          className={styles.infoBtn} 
-          onClick={() => setShowTutorial(!showTutorial)} 
-          title="Como configurar o Telegram?"
+        <button
+          type="button"
+          className={styles.infoBtn}
+          onClick={() => setShowTutorial(!showTutorial)}
+          title="Como obter meu Chat ID?"
         >
           ℹ️
         </button>
       </div>
       <p className={styles.sectionDesc}>
         Receba alertas automáticos no Telegram assim que a automação finalizar seus processos.
+        As mensagens são enviadas pelo bot <strong>@{TELEGRAM_BOT_USERNAME}</strong>; você só precisa informar o seu Chat ID.
       </p>
 
       {showTutorial && (
         <div className={styles.tutorialBox}>
-          <h4 className={styles.tutorialTitle}>Como obter suas credenciais do Telegram:</h4>
+          <h4 className={styles.tutorialTitle}>Como obter o seu Chat ID:</h4>
           <ol className={styles.tutorialList}>
-            <li>Abra o Telegram e busque por <strong>@BotFather</strong>.</li>
-            <li>Envie o comando <code>/newbot</code> e siga as instruções para criar seu bot.</li>
-            <li>Copie o <strong>Token</strong> gerado e cole no campo "Bot Token".</li>
-            <li>Busque por <strong>@userinfobot</strong> (ou adicione seu novo bot a um grupo).</li>
-            <li>Copie o <strong>Chat ID</strong> numérico gerado e cole no campo "Chat ID" (se for grupo, geralmente começa com um sinal de menos <code>-</code>).</li>
-            <li><strong>Importante:</strong> Envie um "Olá" para o seu bot (ou no grupo) para iniciar a conversa antes de testar a integração!</li>
+            <li>Abra o Telegram e busque por <strong>@userinfobot</strong>.</li>
+            <li>Toque em <strong>Iniciar</strong> (ou envie <code>/start</code>). Ele responde com o seu <strong>Id</strong>, um número como <code>123456789</code>.</li>
+            <li>Copie esse número e cole no campo <strong>Chat ID</strong> abaixo.</li>
+            <li><strong>Importante:</strong> busque por <strong>@{TELEGRAM_BOT_USERNAME}</strong> e toque em <strong>Iniciar</strong>. Sem isso o Telegram não permite que o bot envie mensagens para você.</li>
+            <li>Clique em <strong>Testar Integração</strong> para confirmar o recebimento e depois em <strong>Salvar configurações</strong>.</li>
           </ol>
+          <p className={styles.tutorialNote}>
+            Para receber em um grupo: adicione <strong>@{TELEGRAM_BOT_USERNAME}</strong> ao grupo, envie uma mensagem nele e
+            use como Chat ID o número do grupo (começa com <code>-</code>), que o <strong>@userinfobot</strong> informa ao ser
+            encaminhada a ele uma mensagem do grupo.
+          </p>
         </div>
       )}
 
@@ -116,27 +121,17 @@ export default function TelegramForm() {
       </div>
 
       <div className={styles.field}>
-        <label className={styles.label}>Bot Token</label>
-        <input
-          className={styles.input}
-          type="text"
-          placeholder="Ex: 123456789:ABCdefGHIjklmNOPqrsTUVwxyz..."
-          value={form.botToken}
-          onChange={e => set('botToken', e.target.value)}
-        />
-        <span className={styles.hint}>Token fornecido pelo @BotFather.</span>
-      </div>
-
-      <div className={styles.field}>
         <label className={styles.label}>Chat ID</label>
         <input
           className={styles.input}
           type="text"
-          placeholder="Ex: -100123456789 ou 123456789"
+          placeholder="Ex: 123456789"
           value={form.chatId}
           onChange={e => set('chatId', e.target.value)}
         />
-        <span className={styles.hint}>ID do seu chat ou grupo (onde o bot é membro).</span>
+        <span className={styles.hint}>
+          Seu ID numérico no Telegram. Não sabe qual é? Clique no ℹ️ acima para ver como obter.
+        </span>
       </div>
 
       {feedback && (
@@ -146,17 +141,17 @@ export default function TelegramForm() {
       )}
 
       <div className={styles.buttonsRow}>
-        <button 
-          className={styles.testBtn} 
-          onClick={handleTest} 
-          disabled={testing || saving || !form.botToken || !form.chatId}
+        <button
+          className={styles.testBtn}
+          onClick={handleTest}
+          disabled={testing || saving || !form.chatId}
         >
           {testing ? 'Testando...' : 'Testar Integração'}
         </button>
 
-        <button 
-          className={styles.saveBtn} 
-          onClick={handleSave} 
+        <button
+          className={styles.saveBtn}
+          onClick={handleSave}
           disabled={saving || testing}
         >
           {saving ? 'Salvando...' : 'Salvar configurações'}

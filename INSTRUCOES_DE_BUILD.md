@@ -108,3 +108,15 @@ Quando você for lançar uma nova versão da aplicação (por exemplo, atualizan
 
 5. **Após instalação no macOS, execute o comando abaixo para remover a segurança de download:**
    sudo xattr -cr /Applications/AutoMove.app
+
+---
+
+## 5. Notificações do Telegram (bot e token)
+
+Desde a versão 1.8.1 o AutoMove usa um único bot, `@AutoMoveAndreson_bot`, para todos os usuários. O usuário informa apenas o próprio **Chat ID** em Configurações → Telegram; o botão ℹ️ da tela mostra como obtê-lo.
+
+- **Onde está o token:** `src/lib/telegram-bot.ts` (constantes `TELEGRAM_BOT_TOKEN` e `TELEGRAM_BOT_USERNAME`). É o único lugar do código que o contém, e ele vai embutido no instalador.
+- **Decisão consciente:** o token fica no código e no instalador. Quem tiver o instalador consegue extraí-lo; o máximo que faz com ele é enviar mensagens pelo bot para quem já iniciou conversa com ele. Como o grupo de usuários é pequeno, aceitou-se esse risco em vez de manter um serviço intermediário.
+- **Se o token vazar ou precisar ser trocado:** no Telegram, abra o `@BotFather`, envie `/revoke`, escolha o bot e copie o novo token. Atualize `TELEGRAM_BOT_TOKEN` em `src/lib/telegram-bot.ts`, suba a versão e gere novos instaladores (seções 2 e 3). Os instaladores antigos param de notificar até serem atualizados.
+- **Se trocar de bot:** atualize também `TELEGRAM_BOT_USERNAME`, que aparece na tela e no guia do Chat ID.
+- O arquivo `~/.automove/.env` de cada usuário guarda apenas `TELEGRAM_ENABLED` e `TELEGRAM_CHAT_ID`.

@@ -7,6 +7,8 @@ import PendingReportsModal from '../PendingReportsModal/PendingReportsModal';
 import { getSettings, previewAutomation, runAutomation, onAutomationLog } from '@/lib/api-client';
 import { APP_VERSION, APP_AUTHOR, APP_YEAR } from '@/lib/version';
 
+type ReportItem = { file?: string; type?: string; date?: string; value?: string; status?: string; message?: string };
+
 export default function LoginForm() {
   const [activeTab, setActiveTab] = useState<'triage' | 'automation'>('triage');
   const [foldersConfigured, setFoldersConfigured] = useState<boolean | null>(null);
@@ -15,7 +17,7 @@ export default function LoginForm() {
   const [accessUser, setAccessUser] = useState('');
   const [accessHeadless, setAccessHeadless] = useState(true);
   const [accessConfigured, setAccessConfigured] = useState<boolean | null>(null);
-  const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'running' | 'success' | 'warning' | 'error'>('idle');
   const [message, setMessage] = useState('');
   const [report, setReport] = useState<any>(null);
   const [diagnosticErrors, setDiagnosticErrors] = useState<string[]>([]);
@@ -29,6 +31,15 @@ export default function LoginForm() {
   const [pendingReports, setPendingReports] = useState<{ id: string; project: string; value: string }[]>([]);
   
   const terminalEndRef = useRef<HTMLDivElement>(null);
+  const statusRef = useRef<HTMLDivElement>(null);
+  const failedItems: ReportItem[] = report?.items?.filter((item: ReportItem) => item.status === 'error') ?? [];
+
+  // Ao terminar com erro, leva a tela até o aviso: o terminal rola para o fim e escondia o problema
+  useEffect(() => {
+    if ((status === 'warning' || status === 'error') && statusRef.current) {
+      statusRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [status]);
 
   useEffect(() => {
     if (terminalEndRef.current) {
@@ -131,8 +142,15 @@ export default function LoginForm() {
       const res = await runAutomation(selectedProject, continuation, ignoreCheck, pcId);
 
       if (res.success) {
-        setStatus('success');
-        setMessage('Automação concluída com sucesso!');
+        const failed = res.report?.items?.filter((item: ReportItem) => item.status === 'error').length ?? 0;
+        if (failed > 0) {
+          const total = res.report.totalFiles ?? res.report.items.length;
+          setStatus('warning');
+          setMessage(`Automação concluída com ${failed} erro(s): ${res.report.count} de ${total} notas lançadas. Veja abaixo as notas que não foram lançadas.`);
+        } else {
+          setStatus('success');
+          setMessage('Automação concluída com sucesso!');
+        }
         if (res.report) setReport(res.report);
       } else if (res.error === 'PENDING_REPORT_FOUND') {
         setStatus('idle');
@@ -317,13 +335,35 @@ export default function LoginForm() {
                 </div>
               </div>
             ) : message && !(accessHeadless && status === 'running') && (
-              <div className={`${styles.status} ${styles[status]}`}>
+              <div ref={statusRef} className={`${styles.status} ${styles[status]}`}>
                 <span className={styles.statusIcon}>
                   {status === 'running' && '⏳'}
                   {status === 'success' && '✅'}
+                  {status === 'warning' && '⚠️'}
                   {status === 'error' && '❌'}
                 </span>
                 <p>{message}</p>
+              </div>
+            )}
+
+            {failedItems.length > 0 && status !== 'running' && (
+              <div className={styles.failedBox}>
+                <h4 className={styles.failedTitle}>
+                  ❌ {failedItems.length} nota(s) não lançada(s)
+                </h4>
+                <ul className={styles.failedList}>
+                  {failedItems.map((item, i) => (
+                    <li key={i}>
+                      <strong>{item.file}</strong>
+                      <span className={styles.failedMeta}>{item.type} · {item.date} · R$ {item.value}</span>
+                      <span className={styles.failedReason}>{item.message || 'Erro ao lançar.'}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className={styles.failedFooter}>
+                  Esses arquivos continuam na pasta Triados. Rode a automação de novo para lançá-los
+                  antes de enviar a prestação para aprovação.
+                </p>
               </div>
             )}
 
@@ -386,7 +426,9 @@ export default function LoginForm() {
               <div className={styles.reportContainer}>
                 <div className={styles.reportHeader}>
                   <h3 className={styles.reportTitle}>Resumo dos Lançamentos</h3>
-                  <span className={styles.reportCount}>{report.count} arquivos</span>
+                  <span className={`${styles.reportCount} ${failedItems.length > 0 ? styles.reportCountWarning : ''}`}>
+                    {report.count} de {report.totalFiles ?? report.items.length} lançados
+                  </span>
                 </div>
                 
                 <div className={styles.tableWrapper}>
@@ -403,8 +445,13 @@ export default function LoginForm() {
                         <tr key={idx} className={item.status === 'error' ? styles.rowError : ''}>
                           <td className={styles.tdDate}>{item.date || '-'}</td>
                           <td>
-                            <div className={styles.itemType}>{item.type || 'Erro'}</div>
+                            <div className={styles.itemType}>
+                              {item.status === 'error' && '❌ '}{item.type || 'Erro'}
+                            </div>
                             <div className={styles.fileName}>{item.file}</div>
+                            {item.status === 'error' && (
+                              <div className={styles.failedReason}>Não lançado: {item.message || 'erro ao lançar.'}</div>
+                            )}
                           </td>
                           <td className={styles.itemValue}>R$ {item.value || '0,00'}</td>
                         </tr>

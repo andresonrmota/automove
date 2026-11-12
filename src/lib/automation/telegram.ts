@@ -9,6 +9,8 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;');
 }
 
+type ReportItem = { file?: string; type?: string; date?: string; value?: string; status?: string; message?: string };
+
 export async function sendTelegramNotification(report: any, projectName?: string) {
   const token = TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
@@ -22,8 +24,14 @@ export async function sendTelegramNotification(report: any, projectName?: string
   }
 
   const projectInfo = projectName ? `[${projectName}]\n` : '';
-  const title = report.suspendReason ? '⛔ <b>AutoMove: Lançamentos SUSPENSOS!</b>' : '🤖 <b>AutoMove: Processamento Concluído!</b>';
-  const header = `${title}\n${escapeHtml(projectInfo)}\n<b>Resumo:</b>\nTotal processado: ${report.count} arquivo(s)\nTotal valor: R$ ${escapeHtml(String(report.total))}\n\n<b>Lançamentos:</b>\n`;
+  const failedItems: ReportItem[] = (report.items || []).filter((item: ReportItem) => item.status === 'error');
+  const totalFiles = report.totalFiles ?? (report.items || []).length;
+  const title = report.suspendReason
+    ? '⛔ <b>AutoMove: Lançamentos SUSPENSOS!</b>'
+    : failedItems.length > 0
+      ? `⚠️ <b>AutoMove: Concluído com ${failedItems.length} ERRO(S)!</b>`
+      : '🤖 <b>AutoMove: Processamento Concluído!</b>';
+  const header = `${title}\n${escapeHtml(projectInfo)}\n<b>Resumo:</b>\nLançadas: ${report.count} de ${totalFiles} nota(s)\nTotal valor: R$ ${escapeHtml(String(report.total))}\n\n<b>Lançamentos:</b>\n`;
 
   let list = '';
   
@@ -48,15 +56,23 @@ export async function sendTelegramNotification(report: any, projectName?: string
 
   for (const item of sortedItems) {
     const statusIcon = item.status === 'success' ? '✅' : '❌';
-    const errorMsg = item.status === 'error' ? ` (${escapeHtml(item.message || 'Erro ao lançar')})` : '';
-    list += `${statusIcon} [${escapeHtml(item.type || 'Desconhecido')}] ${escapeHtml(item.date || '-')} - R$ ${escapeHtml(item.value || '0,00')}${errorMsg}\n`;
+    list += `${statusIcon} [${escapeHtml(item.type || 'Desconhecido')}] ${escapeHtml(item.date || '-')} - R$ ${escapeHtml(item.value || '0,00')}\n`;
   }
+
+  const failedSection = failedItems.length > 0
+    ? `\n❌ <b>Notas NÃO lançadas (${failedItems.length}), permanecem em Triados:</b>\n` +
+      failedItems.map(item =>
+        `• ${escapeHtml(item.file || '-')}\n   ${escapeHtml(item.type || '-')} | ${escapeHtml(item.date || '-')} | R$ ${escapeHtml(item.value || '0,00')}\n   Motivo: ${escapeHtml(item.message || 'Erro ao lançar')}`
+      ).join('\n') + '\n'
+    : '';
 
   const suspended: string[] = report.suspendedFiles || [];
   const footer = report.suspendReason
     ? `\n⛔ <b>Motivo:</b> ${escapeHtml(report.suspendReason)}\n\n<b>Não tentados (${suspended.length}), permanecem em Triados:</b>\n${suspended.map(f => `⏸️ ${escapeHtml(f)}`).join('\n')}\n\n<b>Não envie a prestação para aprovação antes de lançar as notas restantes.</b>`
-    : `\n<b>Verifique as informação lançadas no Move, VALIDANDO-AS! Se estiverem ok, basta agora enviar para a aprovação.</b>`;
-  const message = header + list + footer;
+    : failedItems.length > 0
+      ? `\n<b>Rode o AutoMove novamente para lançar as notas que ficaram em Triados. Só envie a prestação para aprovação depois disso.</b>`
+      : `\n<b>Verifique as informação lançadas no Move, VALIDANDO-AS! Se estiverem ok, basta agora enviar para a aprovação.</b>`;
+  const message = header + list + failedSection + footer;
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;

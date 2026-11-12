@@ -71,6 +71,36 @@ export async function pickListOption(page: Page, label: string): Promise<boolean
   return false;
 }
 
+/**
+ * Fecha um pop-up SweetAlert do portal que tenha ficado aberto. Quando o portal
+ * demora a gravar, o "Despesa incluída" aparece depois que o robô já seguiu, e o
+ * fundo do pop-up bloqueia todos os cliques seguintes no formulário.
+ */
+async function dismissOpenPopups(page: Page, log: (msg: string) => void): Promise<void> {
+  const container = page.locator('.swal2-container').first();
+  if (!(await container.isVisible().catch(() => false))) return;
+
+  const text = (await page.locator('.swal2-popup').first().innerText().catch(() => '')).replace(/\s+/g, ' ').trim();
+  log(`[AutoMove] 🧹 Fechando pop-up do portal que ficou aberto${text ? `: "${text.slice(0, 120)}"` : ''}`);
+  try {
+    await page.locator('.swal2-confirm, .swal2-container button:has-text("Ok")').first().click({ timeout: 5000 });
+  } catch {
+    await page.keyboard.press('Escape').catch(() => {});
+  }
+  await container.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
+}
+
+/** Resume o erro em uma frase para a tela e o Telegram; o detalhe técnico completo fica no log. */
+export function summarizeError(message: string): string {
+  if (/intercepts pointer events/.test(message) && /swal2/.test(message)) {
+    return 'Um pop-up do portal Move ficou aberto e bloqueou o formulário.';
+  }
+  if (/Timeout \d+ms exceeded/.test(message)) {
+    return 'O portal Move não respondeu a tempo.';
+  }
+  return message.split('\n')[0].slice(0, 200);
+}
+
 export async function runMoveAutomation(
   project: ProjectInfo | null,
   isContinuation: boolean,
@@ -509,6 +539,8 @@ export async function runMoveAutomation(
       log(`[AutoMove] 🔍 Tipo: ${expenseType}, Data: ${expenseDate}, Valor: R$ ${expenseValueStr}`);
 
       try {
+        await dismissOpenPopups(page, log);
+
         // 5. PREENCHIMENTO DO FORMULÁRIO
         if (isFirstDocument) {
           if (isContinuation) {
@@ -639,13 +671,23 @@ export async function runMoveAutomation(
 
         // INCLUIR
         const includeButton = page.locator('button:has-text("Incluir despesa"), button:has-text("Incluir")').first();
+        // O portal às vezes leva mais de 8s para gravar; espera a resposta antes de procurar o pop-up
+        const includeResponse = page.waitForResponse(
+          r => r.request().method() === 'POST' && /\/api\/int\/v1\/project_accountabilities(\?|$)/.test(r.url()),
+          { timeout: 30000 }
+        ).catch(() => null);
         await includeButton.click();
+        log('[AutoMove] ⏳ Aguardando o portal gravar a despesa...');
+        const response = await includeResponse;
+        if (response && !response.ok()) {
+          throw new Error(`O portal Move recusou a despesa (HTTP ${response.status()}).`);
+        }
 
         // NOVO: Clique no pop-up de "Ok" (Despesa incluída...)
         log('[AutoMove] 🆗 Confirmando pop-up de sucesso...');
         const okButton = page.locator('button:has-text("Ok")').first();
         try {
-          await okButton.waitFor({ state: 'visible', timeout: 8000 });
+          await okButton.waitFor({ state: 'visible', timeout: 10000 });
           await okButton.click();
           await page.waitForTimeout(1000);
         } catch {
@@ -667,6 +709,7 @@ export async function runMoveAutomation(
           );
         }
         log('[AutoMove] ✅ Lançamento confirmado na tabela!');
+        await dismissOpenPopups(page, log);
 
         // MOVER PARA PROCESSADOS
         const destinationPath = path.join(processedDir, fileName);
@@ -697,13 +740,14 @@ export async function runMoveAutomation(
         } catch (screenshotErr) {
           console.error('[AutoMove] Não foi possível salvar o print do erro:', screenshotErr);
         }
+        await dismissOpenPopups(page, log).catch(() => {});
         results.push({
           file: fileName,
           type: expenseType,
           value: expenseValueStr,
           date: expenseDate,
           status: 'error',
-          message: errorMessage
+          message: summarizeError(errorMessage)
         });
 
         if (fileError instanceof SuspendRunError) {
@@ -727,6 +771,8 @@ export async function runMoveAutomation(
       items: results,
       total: totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
       count: processedCount,
+      totalFiles: files.length,
+      failed: results.filter(r => r.status === 'error').length,
       suspendReason,
       suspendedFiles
     };
@@ -755,7 +801,8 @@ export async function runMoveAutomation(
         log('[AutoMove] 📝 Log da execução enviado pelo Telegram.');
       }
     } catch (telegramErr) {
-      log('[AutoMove] ⚠️ Não foi possível enviar notificação pelo Telegram (Falha de rede/configuração).');
+      const reason = telegramErr instanceof Error ? telegramErr.message : String(telegramErr);
+      log(`[AutoMove] ⚠️ Notificação do Telegram não enviada: ${reason}`);
       console.error('[AutoMove] Erro no telegram:', telegramErr);
     }
 
@@ -768,9 +815,11 @@ export async function runMoveAutomation(
       };
     }
 
-    return { 
-      success: true, 
-      message: `Processamento concluído: ${processedCount} de ${files.length} arquivos lançados.`,
+    return {
+      success: true,
+      message: finalReport.failed > 0
+        ? `Processamento concluído com ${finalReport.failed} erro(s): ${processedCount} de ${files.length} arquivos lançados.`
+        : `Processamento concluído: ${processedCount} de ${files.length} arquivos lançados.`,
       report: finalReport
     };
 

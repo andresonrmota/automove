@@ -381,6 +381,70 @@
   color: #f87171;
 }
 
+.warning {
+  background: rgba(255, 122, 0, 0.12);
+  border: 1px solid rgba(255, 122, 0, 0.45);
+  color: #fdba74;
+  font-weight: 600;
+}
+
+.failedBox {
+  margin-top: 16px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 12px;
+  padding: 20px;
+  animation: fadeIn 0.4s ease-out;
+}
+
+.failedTitle {
+  color: #f87171;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 12px 0;
+}
+
+.failedList {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.failedList li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.85rem;
+  color: var(--text-primary, #f1f5f9);
+  word-break: break-all;
+}
+
+.failedMeta {
+  color: var(--text-secondary);
+}
+
+.failedReason {
+  color: #fca5a5;
+  font-size: 0.8rem;
+  word-break: normal;
+}
+
+.failedFooter {
+  font-size: 0.85rem;
+  color: #fdba74;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+  margin: 0;
+}
+
+.reportCountWarning {
+  color: #fdba74;
+  background: rgba(255, 122, 0, 0.12);
+}
+
 .statusIcon {
   font-size: 1.2rem;
 }
